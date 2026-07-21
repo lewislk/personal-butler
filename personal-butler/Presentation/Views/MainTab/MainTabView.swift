@@ -5,10 +5,8 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct MainTabView: View {
-    @Environment(\.modelContext) private var context
     @State private var current: AppTab = .home
 
     var body: some View {
@@ -28,9 +26,6 @@ struct MainTabView: View {
         }
         .background(Color.white.ignoresSafeArea())
         .navigationBarHidden(true)
-        .task {
-            SeedData.ensureSeeded(in: context)
-        }
     }
 
     private var tabBar: some View {

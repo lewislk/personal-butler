@@ -27,6 +27,9 @@ struct SegmentedPill<Value: Hashable>: View {
                                 .shadow(color: selection == item.value ? .black.opacity(0.06) : .clear,
                                         radius: 2, x: 0, y: 1)
                         )
+                        // 未选中态 fill 是 .clear，SwiftUI 默认不对透明像素做命中测试，
+                        // 会导致点击非中心区域落空；显式 contentShape 把整段扩成可点击区域
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -59,6 +62,7 @@ struct MiniSegmentedPill<Value: Hashable>: View {
                                 .shadow(color: selection == item.value ? .black.opacity(0.06) : .clear,
                                         radius: 2, x: 0, y: 1)
                         )
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
