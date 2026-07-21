@@ -1,0 +1,1983 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>私人管家 · 原型图</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #4A86E8;
+    --text: #1D1D1F;
+    --text-sub: #757575;
+    --bg: #F5F7FA;
+    --danger: #E55757;
+    --success: #48BB78;
+    --dark-card: #2A2A38;
+    --border: #ECEEF2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  body {
+    font-family: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+    background: #E9EDF3;
+    color: var(--text);
+    padding: 40px 24px 80px;
+    min-height: 100vh;
+  }
+  .page-header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+  .page-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.5px;
+  }
+  .page-header p {
+    color: var(--text-sub);
+    font-size: 14px;
+    margin-top: 6px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 375px));
+    gap: 40px 32px;
+    justify-content: center;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  /* iPhone frame */
+  .phone {
+    width: 375px;
+    height: 812px;
+    background: #fff;
+    border-radius: 44px;
+    box-shadow:
+      0 0 0 10px #111,
+      0 30px 60px -20px rgba(0,0,0,0.35),
+      0 15px 30px -10px rgba(0,0,0,0.2);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .notch {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 140px;
+    height: 28px;
+    background: #111;
+    border-radius: 0 0 18px 18px;
+    z-index: 100;
+  }
+  .status-bar {
+    height: 44px;
+    padding: 14px 24px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    flex-shrink: 0;
+    background: #fff;
+  }
+  .status-right { display: flex; gap: 5px; align-items: center; }
+  .status-right svg { width: 16px; height: 11px; }
+  .screen-title {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text-sub);
+    font-weight: 500;
+  }
+
+  /* Common Nav */
+  .app-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+  }
+  .scroll-area::-webkit-scrollbar { display: none; }
+
+  /* Top bar */
+  .top-bar {
+    padding: 14px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    background: #fff;
+  }
+  .top-bar h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .top-icons { display: flex; gap: 16px; }
+  .icon-btn {
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .icon-btn svg { width: 22px; height: 22px; stroke-width: 1.6; }
+
+  /* Back bar */
+  .back-bar {
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: #fff;
+  }
+  .back-bar .left {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .back-bar .title {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .back-arrow {
+    width: 24px; height: 24px;
+    cursor: pointer;
+  }
+
+  /* Home: fixed 3:2 vertical share between todo card and features grid */
+  .home-scroll {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .home-flex {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .home-flex .todo-card {
+    flex: 3;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .home-flex .features {
+    flex: 2;
+    min-height: 0;
+    grid-auto-rows: 1fr;
+    align-content: stretch;
+  }
+  .home-flex .todo-scroll {
+    max-height: none;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Home todo card */
+  .content-padding { padding: 16px; }
+  .todo-card {
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .todo-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  /* Segmented switch inside todo card head */
+  .todo-switch {
+    display: inline-flex;
+    gap: 4px;
+    background: rgba(255,255,255,0.7);
+    padding: 3px;
+    border-radius: 8px;
+  }
+  .todo-switch .ts-item {
+    padding: 5px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-sub);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+    user-select: none;
+  }
+  .todo-switch .ts-item.active {
+    background: #fff;
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  .todo-count {
+    font-size: 12px;
+    color: var(--text-sub);
+    font-weight: 500;
+  }
+  .todo-card-head .title-block .title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .todo-card-head .title-block .sub {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 3px;
+  }
+  /* Fixed-height scroll area — many todos won't push the features grid down */
+  .todo-scroll {
+    max-height: 168px;
+    overflow-y: auto;
+    -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 20px), transparent 100%);
+            mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 20px), transparent 100%);
+  }
+  .todo-scroll::-webkit-scrollbar { width: 3px; }
+  .todo-scroll::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.12);
+    border-radius: 3px;
+  }
+  .todo-scroll::-webkit-scrollbar-track { background: transparent; }
+  .todo-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(0,0,0,0.04);
+  }
+  .todo-scroll .todo-item:last-child { border-bottom: none; }
+  .todo-check {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 1.5px solid #C4C7CC;
+    margin-right: 12px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .todo-check.done {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+  .todo-check.done svg { width: 12px; height: 12px; }
+  .todo-body { flex: 1; }
+  .todo-body .name {
+    font-size: 14px;
+    color: var(--text);
+  }
+  .todo-body .source {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 2px;
+  }
+  .todo-item.done .todo-body .name {
+    color: #B0B4BA;
+    text-decoration: line-through;
+  }
+  .todo-time {
+    font-size: 12px;
+    color: var(--text-sub);
+    padding: 3px 8px;
+    background: #fff;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .todo-time.urgent { color: var(--danger); }
+
+  /* Features grid */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .feature-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px 8px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #F0F2F5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .feature-card.empty {
+    background: transparent;
+    box-shadow: none;
+    border: 1px dashed #E2E5EA;
+  }
+  .feature-icon {
+    width: 32px; height: 32px;
+    margin: 0 auto 8px;
+    color: var(--primary);
+  }
+  .feature-icon svg { width: 100%; height: 100%; stroke-width: 1.5; }
+  .feature-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .feature-tag {
+    font-size: 11px;
+    color: var(--text-sub);
+    margin-top: 3px;
+  }
+
+  /* Tab bar */
+  .tab-bar {
+    height: 74px;
+    background: #fff;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-around;
+    align-items: flex-start;
+    padding: 8px 0 20px;
+    flex-shrink: 0;
+  }
+  .tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    color: #B0B4BA;
+    flex: 1;
+  }
+  .tab-item.active { color: var(--primary); }
+  .tab-item svg { width: 22px; height: 22px; stroke-width: 1.8; }
+  .tab-item span { font-size: 10px; font-weight: 500; }
+
+  /* Notification list */
+  .notif-item {
+    padding: 14px 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .notif-source-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: #EEF3FD;
+    color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .notif-source-icon svg { width: 18px; height: 18px; stroke-width: 1.6; }
+  .notif-source-icon.pink { background: #FDECEC; color: var(--danger); }
+  .notif-source-icon.green { background: #E7F6EE; color: var(--success); }
+  .notif-source-icon.dark { background: #2A2A38; color: #fff; }
+  .notif-content { flex: 1; min-width: 0; }
+  .notif-title-row {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  }
+  .notif-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .notif-time {
+    font-size: 11px;
+    color: var(--text-sub);
+    flex-shrink: 0;
+  }
+  .notif-desc {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 3px;
+    line-height: 1.5;
+  }
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-sub);
+  }
+
+  /* Me page */
+  .me-card {
+    background: #fff;
+    border-radius: 12px;
+    margin: 16px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #F0F2F5;
+  }
+  .me-card-title {
+    padding: 14px 16px 6px;
+    font-size: 13px;
+    color: var(--text-sub);
+    font-weight: 500;
+  }
+  .me-item {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+  }
+  .me-item:first-of-type { border-top: none; }
+  .me-item .left {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .me-item .icon {
+    width: 20px; height: 20px;
+    color: var(--text-sub);
+  }
+  .me-item .icon svg { width: 100%; height: 100%; stroke-width: 1.6; }
+  .me-item .label { font-size: 14px; color: var(--text); }
+  .me-item .value {
+    font-size: 12px; color: var(--text-sub);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .me-item .chevron { color: #C4C7CC; }
+  .privacy-card .me-card-title {
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .switch {
+    width: 34px; height: 20px;
+    background: #E2E5EA;
+    border-radius: 20px;
+    position: relative;
+  }
+  .switch::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 16px; height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .switch.on { background: var(--primary); }
+  .switch.on::after { left: 16px; }
+
+  /* Segmented control */
+  .segmented {
+    display: flex;
+    margin: 16px;
+    padding: 3px;
+    background: #F0F2F5;
+    border-radius: 8px;
+  }
+  .segmented .seg {
+    flex: 1;
+    padding: 7px 0;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-sub);
+    border-radius: 6px;
+    font-weight: 500;
+  }
+  .segmented .seg.active {
+    background: #fff;
+    color: var(--text);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  }
+
+  /* FAB */
+  .fab {
+    position: absolute;
+    right: 20px;
+    bottom: 30px;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 20px rgba(74,134,232,0.4);
+    z-index: 20;
+  }
+  .fab svg { width: 24px; height: 24px; stroke-width: 2; }
+
+  /* Schedule */
+  .schedule-list { padding: 8px 20px 20px; }
+  .schedule-day {
+    font-size: 12px;
+    color: var(--text-sub);
+    padding: 12px 0 8px;
+    font-weight: 500;
+  }
+  .schedule-item {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+  }
+  .schedule-time {
+    width: 46px;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-sub);
+    text-align: right;
+    line-height: 1.6;
+  }
+  .schedule-bar {
+    width: 3px;
+    border-radius: 2px;
+    background: var(--primary);
+    flex-shrink: 0;
+  }
+  .schedule-bar.green { background: var(--success); }
+  .schedule-bar.orange { background: #F0A150; }
+  .schedule-body { flex: 1; }
+  .schedule-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .schedule-remark {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 2px;
+  }
+
+  /* Anniversary */
+  .anni-hero {
+    margin: 16px;
+    padding: 20px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #F0FBF5, #E7F6EE);
+    border: 1px solid #D6EEDF;
+  }
+  .anni-hero .label {
+    font-size: 12px;
+    color: var(--text-sub);
+  }
+  .anni-hero .name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 6px;
+  }
+  .anni-hero .days-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .anni-hero .days {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--success);
+    letter-spacing: -1px;
+  }
+  .anni-hero .unit {
+    font-size: 13px;
+    color: var(--success);
+    font-weight: 500;
+  }
+  .anni-hero .date {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 4px;
+  }
+  .anni-list { padding: 0 16px 20px; }
+  .anni-tabs {
+    display: flex;
+    gap: 4px;
+    background: #F0F2F5;
+    padding: 3px;
+    border-radius: 8px;
+    margin: 12px 0 4px;
+  }
+  .anni-tab {
+    flex: 1;
+    text-align: center;
+    padding: 7px 0;
+    font-size: 13px;
+    color: var(--text-sub);
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .anni-tab.active {
+    background: #fff;
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  }
+  .anni-list .list-title {
+    padding: 12px 4px 8px;
+    font-size: 13px;
+    color: var(--text-sub);
+    font-weight: 500;
+  }
+  .anni-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 4px;
+    border-top: 1px solid var(--border);
+  }
+  .anni-item .info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .anni-type-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--success);
+  }
+  .anni-type-dot.blue { background: var(--primary); }
+  .anni-item .info .text .name {
+    font-size: 14px;
+    color: var(--text);
+    font-weight: 500;
+  }
+  .anni-item .info .text .date {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 3px;
+  }
+  .anni-badge {
+    padding: 4px 10px;
+    background: #E7F6EE;
+    color: var(--success);
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  .anni-badge.warn { background: #FFF3E6; color: #E58A32; }
+  .anni-badge.blue { background: #EEF3FD; color: var(--primary); }
+
+  /* Password dark cards */
+  .pw-filter {
+    padding: 12px 16px;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+  }
+  .pw-filter::-webkit-scrollbar { display: none; }
+  .pw-tag {
+    padding: 5px 12px;
+    background: var(--bg);
+    color: var(--text-sub);
+    border-radius: 16px;
+    font-size: 12px;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .pw-tag.active {
+    background: var(--primary);
+    color: #fff;
+  }
+  .pw-list { padding: 4px 16px 20px; }
+  .pw-card {
+    background: linear-gradient(135deg, #F4F7FE, #E9EEFB);
+    color: var(--text);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    border: 1px solid #DDE4F5;
+    box-shadow: 0 2px 8px rgba(74,134,232,0.06);
+  }
+  .pw-card.tint-lav { background: linear-gradient(135deg, #F6F3FC, #ECE5F7); border-color: #E0D7EE; }
+  .pw-card.tint-mint { background: linear-gradient(135deg, #F0FBF5, #E1F1E8); border-color: #CFE7D9; }
+  .pw-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .pw-card .plat {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .pw-lock-badge {
+    width: 16px; height: 16px;
+    color: var(--primary);
+    opacity: 0.7;
+  }
+  .pw-card.tint-lav .pw-lock-badge { color: #8B6DBE; }
+  .pw-card.tint-mint .pw-lock-badge { color: var(--success); }
+  .pw-lock-badge svg { width: 100%; height: 100%; stroke-width: 1.7; }
+  .pw-card .type {
+    font-size: 11px;
+    color: var(--text-sub);
+    margin-top: 2px;
+  }
+  .pw-row {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .pw-row:first-of-type {
+    border-top: none;
+    padding-top: 0;
+  }
+  .pw-row .k {
+    font-size: 11px;
+    color: var(--text-sub);
+  }
+  .pw-row .v {
+    font-size: 13px;
+    color: var(--text);
+    margin-top: 3px;
+    font-family: 'Inter', monospace;
+  }
+  .pw-row .v.hide {
+    letter-spacing: 3px;
+    font-size: 15px;
+    color: var(--text-sub);
+  }
+  .pw-actions {
+    display: flex; gap: 6px;
+  }
+  .pw-btn {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.7);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-sub);
+    backdrop-filter: blur(4px);
+  }
+  .pw-btn svg { width: 14px; height: 14px; stroke-width: 1.6; }
+
+  /* Food */
+  .food-tags {
+    display: flex; gap: 8px;
+    padding: 12px 16px;
+    overflow-x: auto;
+  }
+  .food-tags::-webkit-scrollbar { display: none; }
+  .food-tag {
+    padding: 5px 12px;
+    background: var(--bg);
+    color: var(--text-sub);
+    border-radius: 16px;
+    font-size: 12px;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .food-tag.active { background: var(--primary); color: #fff; }
+  .food-list { padding: 4px 16px 20px; }
+  .food-card {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .food-img {
+    width: 90px; height: 90px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #FFD7B5, #FF8A65);
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 24px;
+  }
+  .food-img.b2 { background: linear-gradient(135deg, #BEE1FF, #6AA9E9); }
+  .food-img.b3 { background: linear-gradient(135deg, #FFE29A, #F0B650); }
+  .food-info { flex: 1; padding-top: 4px; }
+  .food-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .food-stars {
+    display: flex; gap: 2px; margin-top: 6px;
+    color: #F5A623;
+    font-size: 12px;
+  }
+  .food-stars .star.empty { color: #E2E5EA; }
+  .food-tags-inner {
+    display: flex; gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .food-mini-tag {
+    padding: 2px 8px;
+    background: var(--bg);
+    color: var(--text-sub);
+    border-radius: 10px;
+    font-size: 11px;
+  }
+  .food-remark {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  /* Cooking */
+  .cook-list { padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .cook-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #F0F2F5;
+    overflow: hidden;
+  }
+  .cook-img {
+    height: 100px;
+    background: linear-gradient(135deg, #FFE0B2, #FFAB6E);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 36px;
+  }
+  .cook-img.g { background: linear-gradient(135deg, #C8E6C9, #81C784); }
+  .cook-img.r { background: linear-gradient(135deg, #FFCDD2, #EF8B8B); }
+  .cook-img.p { background: linear-gradient(135deg, #E1BEE7, #BA8CCF); }
+  .cook-info { padding: 10px 12px 12px; }
+  .cook-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .cook-meta {
+    display: flex; gap: 6px;
+    margin-top: 6px;
+  }
+  .cook-badge {
+    padding: 2px 6px;
+    background: var(--bg);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--text-sub);
+  }
+  .cook-badge.blue { background: #EEF3FD; color: var(--primary); }
+
+  /* All-apps list (Tab2) */
+  .apps-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 16px 4px;
+    padding: 10px 12px;
+    background: #EEF3FD;
+    border-radius: 10px;
+    font-size: 12px;
+    color: var(--primary);
+    line-height: 1.5;
+  }
+  .apps-hint b { font-weight: 600; }
+  .apps-hint svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .apps-section-title {
+    padding: 14px 20px 6px;
+    font-size: 12px;
+    color: var(--text-sub);
+    font-weight: 500;
+  }
+  .apps-list {
+    background: #fff;
+    margin: 0 16px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #F0F2F5;
+    overflow: hidden;
+  }
+  .app-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+    background: #fff;
+    transition: background .15s, transform .12s;
+  }
+  .app-row:first-child { border-top: none; }
+  .app-row.dragging {
+    opacity: 0.55;
+    background: #F5F7FA;
+    transform: scale(0.985);
+  }
+  .app-row.drag-over {
+    box-shadow: inset 0 2px 0 0 var(--primary);
+  }
+  .app-icon {
+    width: 34px; height: 34px;
+    border-radius: 9px;
+    background: #EEF3FD;
+    color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .app-icon svg { width: 18px; height: 18px; stroke-width: 1.6; }
+  .app-info { flex: 1; min-width: 0; }
+  .app-info .app-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .app-info .app-tag {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 2px;
+  }
+  .app-order {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: #EEF3FD;
+    color: var(--primary);
+    font-size: 11px;
+    font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .app-row.hidden-row .app-order {
+    background: var(--bg);
+    color: var(--text-sub);
+  }
+  .app-drag {
+    color: #B0B4BA;
+    display: flex; align-items: center; justify-content: center;
+    padding: 6px 4px;
+    cursor: grab;
+    flex-shrink: 0;
+    touch-action: none;
+  }
+  .app-drag:active { cursor: grabbing; }
+  .app-drag svg { width: 18px; height: 18px; }
+  .apps-divider {
+    text-align: center;
+    padding: 10px 0 8px;
+    font-size: 11px;
+    color: #B0B4BA;
+    background: #fff;
+    border-top: 1px dashed #E2E5EA;
+  }
+
+  /* Section header for prototype */
+  .section-header {
+    grid-column: 1 / -1;
+    text-align: center;
+    margin: 30px 0 -10px;
+    color: var(--text-sub);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>私人管家 · 极简UI原型图</h1>
+  <p>Personal Butler · 全部核心页面 · v1.0</p>
+</div>
+
+<div class="grid">
+
+  <!-- ===================== Tab1 · 主页 ===================== -->
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="app-content">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="status-right">
+            <svg viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="5" y="2" width="3" height="10" rx="1"/><rect x="10" y="0" width="3" height="12" rx="1"/></svg>
+            <span style="font-size:11px;">100%</span>
+          </span>
+        </div>
+        <div class="top-bar">
+          <h1>私人管家</h1>
+        </div>
+
+        <div class="scroll-area home-scroll">
+          <div class="content-padding home-flex">
+            <!-- Todo card -->
+            <div class="todo-card">
+              <div class="todo-card-head">
+                <div class="todo-switch">
+                  <div class="ts-item active" data-tab="today">今日待办</div>
+                  <div class="ts-item" data-tab="week">近期待办</div>
+                </div>
+                <div class="todo-count" id="todoCount">6 项</div>
+              </div>
+
+              <!-- 今日 -->
+              <div class="todo-scroll" data-panel="today">
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">团队晨会</div>
+                    <div class="source">来源 · 日程</div>
+                  </div>
+                  <div class="todo-time">09:00</div>
+                </div>
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">牙医预约</div>
+                    <div class="source">来源 · 日程</div>
+                  </div>
+                  <div class="todo-time">14:30</div>
+                </div>
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">与产品经理需求评审</div>
+                    <div class="source">来源 · 日程</div>
+                  </div>
+                  <div class="todo-time urgent">18:00</div>
+                </div>
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">采购红烧肉食材</div>
+                    <div class="source">来源 · 烹饪</div>
+                  </div>
+                  <div class="todo-time">今晚</div>
+                </div>
+                <div class="todo-item done">
+                  <div class="todo-check done"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6l3 3 5-6"/></svg></div>
+                  <div class="todo-body">
+                    <div class="name">尝试做番茄鸡蛋面</div>
+                    <div class="source">来源 · 烹饪</div>
+                  </div>
+                  <div class="todo-time">已完成</div>
+                </div>
+                <div class="todo-item done">
+                  <div class="todo-check done"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6l3 3 5-6"/></svg></div>
+                  <div class="todo-body">
+                    <div class="name">晨跑 30 分钟</div>
+                    <div class="source">来源 · 日程</div>
+                  </div>
+                  <div class="todo-time">已完成</div>
+                </div>
+              </div>
+
+              <!-- 近7天 -->
+              <div class="todo-scroll" data-panel="week" hidden>
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">与产品经理需求评审</div>
+                    <div class="source">来源 · 日程</div>
+                  </div>
+                  <div class="todo-time urgent">今天 18:00</div>
+                </div>
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">江边跑步</div>
+                    <div class="source">来源 · 日程</div>
+                  </div>
+                  <div class="todo-time">明天 07:00</div>
+                </div>
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">妈妈生日</div>
+                    <div class="source">来源 · 纪念日</div>
+                  </div>
+                  <div class="todo-time">周四 · 3天后</div>
+                </div>
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">尝试做红烧肉</div>
+                    <div class="source">来源 · 烹饪</div>
+                  </div>
+                  <div class="todo-time">周五</div>
+                </div>
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">季度体检</div>
+                    <div class="source">来源 · 日程</div>
+                  </div>
+                  <div class="todo-time">周六 09:30</div>
+                </div>
+                <div class="todo-item">
+                  <div class="todo-check"></div>
+                  <div class="todo-body">
+                    <div class="name">读书会 · 分享读后感</div>
+                    <div class="source">来源 · 日程</div>
+                  </div>
+                  <div class="todo-time">下周日 15:00</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Features (home shows first 6 apps) -->
+            <div class="features">
+              <div class="feature-card">
+                <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div>
+                <div class="feature-name">日程管理</div>
+                <div class="feature-tag">计划 / 提醒</div>
+              </div>
+              <div class="feature-card">
+                <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 21s-7-4.5-9-9.5C1.5 7.5 4 4 8 4c2 0 3 1 4 2.5C13 5 14 4 16 4c4 0 6.5 3.5 5 7.5-2 5-9 9.5-9 9.5z"/></svg></div>
+                <div class="feature-name">纪念日</div>
+                <div class="feature-tag">生日 / 倒计时</div>
+              </div>
+              <div class="feature-card">
+                <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg></div>
+                <div class="feature-name">密码记录</div>
+                <div class="feature-tag">私密账号存储</div>
+              </div>
+              <div class="feature-card">
+                <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></div>
+                <div class="feature-name">美食记录</div>
+                <div class="feature-tag">探店打卡相册</div>
+              </div>
+              <div class="feature-card">
+                <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 8h11l3 3v10H4z"/><path d="M8 4l3 4M12 4l3 4"/></svg></div>
+                <div class="feature-name">烹饪管理</div>
+                <div class="feature-tag">自建菜谱</div>
+              </div>
+              <div class="feature-card">
+                <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+                <div class="feature-name">笔记</div>
+                <div class="feature-tag">灵感 / 摘录</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="tab-bar">
+          <div class="tab-item active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+            <span>主页</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span>全部应用</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+            <span>我的</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-title">Tab1 · 主页</div>
+  </div>
+
+  <!-- ===================== Tab2 · 全部应用 ===================== -->
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="app-content" style="background:#F5F7FA;">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="status-right">
+            <svg viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="5" y="2" width="3" height="10" rx="1"/><rect x="10" y="0" width="3" height="12" rx="1"/></svg>
+            <span style="font-size:11px;">100%</span>
+          </span>
+        </div>
+        <div class="top-bar" style="background:#F5F7FA;">
+          <h1>全部应用</h1>
+          <div id="apps-edit-toggle" class="link" style="color:var(--primary); font-size:13px; font-weight:500; cursor:pointer;">排序</div>
+        </div>
+
+        <div class="scroll-area">
+          <div class="apps-hint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 6h13M8 12h13M8 18h13M4 6h.01M4 12h.01M4 18h.01"/></svg>
+            <span>长按拖拽应用，调整首页展示顺序。<b>前 6 个</b>将展示在主页。</span>
+          </div>
+
+          <div class="apps-section-title">主页展示 · 前 6 项</div>
+          <div class="apps-list" id="apps-list">
+            <div class="app-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div>
+              <div class="app-info"><div class="app-name">日程管理</div><div class="app-tag">计划 / 提醒</div></div>
+              <div class="app-order">1</div>
+              <div class="app-drag" title="拖拽调整"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+            <div class="app-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21s-7-4.5-9-9.5C1.5 7.5 4 4 8 4c2 0 3 1 4 2.5C13 5 14 4 16 4c4 0 6.5 3.5 5 7.5-2 5-9 9.5-9 9.5z"/></svg></div>
+              <div class="app-info"><div class="app-name">纪念日</div><div class="app-tag">生日 / 倒计时</div></div>
+              <div class="app-order">2</div>
+              <div class="app-drag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+            <div class="app-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg></div>
+              <div class="app-info"><div class="app-name">密码记录</div><div class="app-tag">私密账号存储</div></div>
+              <div class="app-order">3</div>
+              <div class="app-drag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+            <div class="app-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></div>
+              <div class="app-info"><div class="app-name">美食记录</div><div class="app-tag">探店打卡相册</div></div>
+              <div class="app-order">4</div>
+              <div class="app-drag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+            <div class="app-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8h11l3 3v10H4z"/><path d="M8 4l3 4M12 4l3 4"/></svg></div>
+              <div class="app-info"><div class="app-name">烹饪管理</div><div class="app-tag">自建菜谱</div></div>
+              <div class="app-order">5</div>
+              <div class="app-drag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+            <div class="app-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+              <div class="app-info"><div class="app-name">笔记</div><div class="app-tag">灵感 / 摘录</div></div>
+              <div class="app-order">6</div>
+              <div class="app-drag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+
+            <div class="apps-divider">— 首页折叠 —</div>
+
+            <div class="app-row hidden-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v18M3 12h18"/></svg></div>
+              <div class="app-info"><div class="app-name">记账本</div><div class="app-tag">收支 / 预算</div></div>
+              <div class="app-order">7</div>
+              <div class="app-drag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+            <div class="app-row hidden-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></div>
+              <div class="app-info"><div class="app-name">健康记录</div><div class="app-tag">运动 / 体检</div></div>
+              <div class="app-order">8</div>
+              <div class="app-drag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+            <div class="app-row hidden-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2v6M12 22v-6M4 6l4 4M20 18l-4-4M4 18l4-4M20 6l-4 4"/></svg></div>
+              <div class="app-info"><div class="app-name">旅行清单</div><div class="app-tag">行程 / 打包</div></div>
+              <div class="app-order">9</div>
+              <div class="app-drag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+            <div class="app-row hidden-row" draggable="true">
+              <div class="app-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg></div>
+              <div class="app-info"><div class="app-name">观影记录</div><div class="app-tag">电影 / 剧集</div></div>
+              <div class="app-order">10</div>
+              <div class="app-drag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></svg></div>
+            </div>
+          </div>
+          <div style="height:20px;"></div>
+        </div>
+
+        <div class="tab-bar">
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+            <span>主页</span>
+          </div>
+          <div class="tab-item active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span>全部应用</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+            <span>我的</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-title">Tab2 · 全部应用（可拖拽排序）</div>
+  </div>
+
+  <!-- ===================== Tab3 · 我的 ===================== -->
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="app-content" style="background:#F5F7FA;">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="status-right">
+            <svg viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="5" y="2" width="3" height="10" rx="1"/><rect x="10" y="0" width="3" height="12" rx="1"/></svg>
+            <span style="font-size:11px;">100%</span>
+          </span>
+        </div>
+        <div class="top-bar">
+          <h1>我的</h1>
+        </div>
+
+        <div class="scroll-area">
+          <!-- Privacy card -->
+          <div class="me-card privacy-card">
+            <div class="me-card-title">隐私安全设置</div>
+            <div class="me-item">
+              <div class="left">
+                <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg></span>
+                <span class="label">应用锁</span>
+              </div>
+              <div class="value">面容ID <span class="chevron">›</span></div>
+            </div>
+            <div class="me-item">
+              <div class="left">
+                <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg></span>
+                <span class="label">数据备份</span>
+              </div>
+              <div class="value">昨天 20:15 <span class="chevron">›</span></div>
+            </div>
+            <div class="me-item">
+              <div class="left">
+                <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4v6h6"/><path d="M4 10a8 8 0 1 1 3 6"/></svg></span>
+                <span class="label">数据恢复</span>
+              </div>
+              <div class="value"><span class="chevron">›</span></div>
+            </div>
+            <div class="me-item">
+              <div class="left">
+                <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 7h12M9 7v-2h6v2M8 7l1 13h6l1-13"/></svg></span>
+                <span class="label">清除缓存</span>
+              </div>
+              <div class="value">2.3 MB <span class="chevron">›</span></div>
+            </div>
+          </div>
+
+          <!-- About -->
+          <div class="me-card">
+            <div class="me-card-title">关于</div>
+            <div class="me-item">
+              <div class="left">
+                <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span>
+                <span class="label">版本信息</span>
+              </div>
+              <div class="value">v1.0.0 <span class="chevron">›</span></div>
+            </div>
+          </div>
+          <div style="height:20px;"></div>
+        </div>
+
+        <div class="tab-bar">
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+            <span>主页</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span>全部应用</span>
+          </div>
+          <div class="tab-item active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+            <span>我的</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-title">Tab3 · 我的</div>
+  </div>
+
+  <div class="section-header">— 五大核心功能子页面 —</div>
+
+  <!-- ===================== 日程管理 ===================== -->
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="app-content">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="status-right">
+            <svg viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="5" y="2" width="3" height="10" rx="1"/><rect x="10" y="0" width="3" height="12" rx="1"/></svg>
+            <span style="font-size:11px;">100%</span>
+          </span>
+        </div>
+        <div class="back-bar">
+          <div class="left">
+            <span class="back-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6l-6 6 6 6"/></svg></span>
+            <span class="title">日程管理</span>
+          </div>
+        </div>
+
+        <div class="scroll-area" style="position:relative;">
+          <div class="segmented">
+            <div class="seg active">日视图</div>
+            <div class="seg">月视图</div>
+          </div>
+
+          <div class="schedule-list">
+            <div class="schedule-day">今天 · 7月20日 周一</div>
+            <div class="schedule-item">
+              <div class="schedule-time">09:00</div>
+              <div class="schedule-bar"></div>
+              <div class="schedule-body">
+                <div class="schedule-title">团队晨会</div>
+                <div class="schedule-remark">同步本周迭代进度</div>
+              </div>
+            </div>
+            <div class="schedule-item">
+              <div class="schedule-time">14:30</div>
+              <div class="schedule-bar green"></div>
+              <div class="schedule-body">
+                <div class="schedule-title">牙医预约</div>
+                <div class="schedule-remark">阳光医院 · 3号诊室</div>
+              </div>
+            </div>
+            <div class="schedule-item">
+              <div class="schedule-time">18:00</div>
+              <div class="schedule-bar orange"></div>
+              <div class="schedule-body">
+                <div class="schedule-title">需求评审会议</div>
+                <div class="schedule-remark">与产品经理确认下一版需求</div>
+              </div>
+            </div>
+
+            <div class="schedule-day">明天 · 7月21日 周二</div>
+            <div class="schedule-item">
+              <div class="schedule-time">07:00</div>
+              <div class="schedule-bar green"></div>
+              <div class="schedule-body">
+                <div class="schedule-title">江边跑步</div>
+                <div class="schedule-remark">30 分钟慢跑</div>
+              </div>
+            </div>
+            <div class="schedule-item">
+              <div class="schedule-time">全天</div>
+              <div class="schedule-bar"></div>
+              <div class="schedule-body">
+                <div class="schedule-title">项目冲刺日</div>
+                <div class="schedule-remark">专注开发，不排会议</div>
+              </div>
+            </div>
+          </div>
+          <div class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-title">子页面 · 日程管理</div>
+  </div>
+
+  <!-- ===================== 纪念日 ===================== -->
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="app-content">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="status-right">
+            <svg viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="5" y="2" width="3" height="10" rx="1"/><rect x="10" y="0" width="3" height="12" rx="1"/></svg>
+            <span style="font-size:11px;">100%</span>
+          </span>
+        </div>
+        <div class="back-bar">
+          <div class="left">
+            <span class="back-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6l-6 6 6 6"/></svg></span>
+            <span class="title">纪念日</span>
+          </div>
+        </div>
+
+        <div class="scroll-area" style="position:relative;">
+          <div class="anni-hero">
+            <div class="label">最近的纪念日</div>
+            <div class="name">妈妈生日 🎂</div>
+            <div class="days-row">
+              <span class="days">3</span>
+              <span class="unit">天后</span>
+            </div>
+            <div class="date">公历 · 7月23日 · 农历 六月十九</div>
+          </div>
+
+          <div class="anni-list">
+            <div class="anni-tabs">
+              <div class="anni-tab active" data-anni="repeat">每年重复</div>
+              <div class="anni-tab" data-anni="count">累计天数</div>
+            </div>
+
+            <!-- 每年重复 · 倒计时 -->
+            <div class="anni-panel" data-panel="repeat">
+              <div class="anni-item">
+                <div class="info">
+                  <div class="anni-type-dot green"></div>
+                  <div class="text">
+                    <div class="name">妈妈生日</div>
+                    <div class="date">公历 · 7月23日</div>
+                  </div>
+                </div>
+                <div class="anni-badge warn">还有 3 天</div>
+              </div>
+              <div class="anni-item">
+                <div class="info">
+                  <div class="anni-type-dot green"></div>
+                  <div class="text">
+                    <div class="name">结婚周年</div>
+                    <div class="date">公历 · 8月17日</div>
+                  </div>
+                </div>
+                <div class="anni-badge">还有 28 天</div>
+              </div>
+              <div class="anni-item">
+                <div class="info">
+                  <div class="anni-type-dot green"></div>
+                  <div class="text">
+                    <div class="name">爸爸生日</div>
+                    <div class="date">农历 · 九月初八</div>
+                  </div>
+                </div>
+                <div class="anni-badge">还有 76 天</div>
+              </div>
+              <div class="anni-item">
+                <div class="info">
+                  <div class="anni-type-dot green"></div>
+                  <div class="text">
+                    <div class="name">中秋节</div>
+                    <div class="date">农历 · 八月十五</div>
+                  </div>
+                </div>
+                <div class="anni-badge">还有 54 天</div>
+              </div>
+            </div>
+
+            <!-- 累计天数 -->
+            <div class="anni-panel" data-panel="count" hidden>
+              <div class="anni-item">
+                <div class="info">
+                  <div class="anni-type-dot blue"></div>
+                  <div class="text">
+                    <div class="name">入职纪念</div>
+                    <div class="date">起始 · 2022年3月14日</div>
+                  </div>
+                </div>
+                <div class="anni-badge blue">第 1590 天</div>
+              </div>
+              <div class="anni-item">
+                <div class="info">
+                  <div class="anni-type-dot blue"></div>
+                  <div class="text">
+                    <div class="name">与她在一起</div>
+                    <div class="date">起始 · 2020年11月2日</div>
+                  </div>
+                </div>
+                <div class="anni-badge blue">第 2087 天</div>
+              </div>
+              <div class="anni-item">
+                <div class="info">
+                  <div class="anni-type-dot blue"></div>
+                  <div class="text">
+                    <div class="name">戒烟</div>
+                    <div class="date">起始 · 2025年1月1日</div>
+                  </div>
+                </div>
+                <div class="anni-badge blue">第 201 天</div>
+              </div>
+              <div class="anni-item">
+                <div class="info">
+                  <div class="anni-type-dot blue"></div>
+                  <div class="text">
+                    <div class="name">开始学 SwiftUI</div>
+                    <div class="date">起始 · 2026年5月10日</div>
+                  </div>
+                </div>
+                <div class="anni-badge blue">第 72 天</div>
+              </div>
+            </div>
+          </div>
+          <div class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-title">子页面 · 纪念日</div>
+  </div>
+
+  <!-- ===================== 密码记录 ===================== -->
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="app-content">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="status-right">
+            <svg viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="5" y="2" width="3" height="10" rx="1"/><rect x="10" y="0" width="3" height="12" rx="1"/></svg>
+            <span style="font-size:11px;">100%</span>
+          </span>
+        </div>
+        <div class="back-bar">
+          <div class="left">
+            <span class="back-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6l-6 6 6 6"/></svg></span>
+            <span class="title">密码记录</span>
+          </div>
+          <span class="icon-btn" style="color:var(--text-sub);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          </span>
+        </div>
+
+        <div class="scroll-area" style="position:relative;">
+          <div class="pw-filter">
+            <div class="pw-tag active">全部</div>
+            <div class="pw-tag">社交</div>
+            <div class="pw-tag">办公</div>
+            <div class="pw-tag">金融</div>
+            <div class="pw-tag">自定义</div>
+          </div>
+
+          <div class="pw-list">
+            <div class="pw-card">
+              <div class="pw-card-head">
+                <span class="plat">微信</span>
+                <span class="pw-lock-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>
+              </div>
+              <div class="type">社交 · 常用</div>
+              <div class="pw-row">
+                <div>
+                  <div class="k">账号</div>
+                  <div class="v">lewis_88@qq.com</div>
+                </div>
+                <div class="pw-actions">
+                  <div class="pw-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></div>
+                </div>
+              </div>
+              <div class="pw-row">
+                <div>
+                  <div class="k">密码</div>
+                  <div class="v hide">••••••••</div>
+                </div>
+                <div class="pw-actions">
+                  <div class="pw-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 12s3-6 10-6 10 6 10 6-3 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="pw-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pw-card tint-lav">
+              <div class="pw-card-head">
+                <span class="plat">招商银行</span>
+                <span class="pw-lock-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>
+              </div>
+              <div class="type">金融</div>
+              <div class="pw-row">
+                <div>
+                  <div class="k">账号</div>
+                  <div class="v">6225 **** **** 8823</div>
+                </div>
+                <div class="pw-actions">
+                  <div class="pw-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></div>
+                </div>
+              </div>
+              <div class="pw-row">
+                <div>
+                  <div class="k">密码</div>
+                  <div class="v hide">••••••</div>
+                </div>
+                <div class="pw-actions">
+                  <div class="pw-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 12s3-6 10-6 10 6 10 6-3 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="pw-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pw-card tint-mint">
+              <div class="pw-card-head">
+                <span class="plat">飞书办公</span>
+                <span class="pw-lock-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>
+              </div>
+              <div class="type">办公</div>
+              <div class="pw-row">
+                <div>
+                  <div class="k">账号</div>
+                  <div class="v">lewis@company.com</div>
+                </div>
+                <div class="pw-actions">
+                  <div class="pw-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></div>
+                </div>
+              </div>
+              <div class="pw-row">
+                <div>
+                  <div class="k">密码</div>
+                  <div class="v hide">••••••••••</div>
+                </div>
+                <div class="pw-actions">
+                  <div class="pw-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 12s3-6 10-6 10 6 10 6-3 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="pw-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-title">子页面 · 密码记录</div>
+  </div>
+
+  <!-- ===================== 美食记录 ===================== -->
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="app-content">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="status-right">
+            <svg viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="5" y="2" width="3" height="10" rx="1"/><rect x="10" y="0" width="3" height="12" rx="1"/></svg>
+            <span style="font-size:11px;">100%</span>
+          </span>
+        </div>
+        <div class="back-bar">
+          <div class="left">
+            <span class="back-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6l-6 6 6 6"/></svg></span>
+            <span class="title">美食记录</span>
+          </div>
+        </div>
+
+        <div class="scroll-area" style="position:relative;">
+          <div class="food-tags">
+            <div class="food-tag active">全部</div>
+            <div class="food-tag">火锅</div>
+            <div class="food-tag">奶茶</div>
+            <div class="food-tag">中餐</div>
+            <div class="food-tag">日料</div>
+            <div class="food-tag">咖啡</div>
+          </div>
+
+          <div class="food-list">
+            <div class="food-card">
+              <div class="food-img">🍜</div>
+              <div class="food-info">
+                <div class="food-name">兰州牛肉面</div>
+                <div class="food-stars">
+                  <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star empty">★</span>
+                </div>
+                <div class="food-tags-inner">
+                  <span class="food-mini-tag">中餐</span>
+                  <span class="food-mini-tag">午餐</span>
+                </div>
+                <div class="food-remark">牛肉给得多，汤头清亮，会再来</div>
+              </div>
+            </div>
+
+            <div class="food-card">
+              <div class="food-img b2">🍣</div>
+              <div class="food-info">
+                <div class="food-name">Sushi 舞 · 日料</div>
+                <div class="food-stars">
+                  <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
+                </div>
+                <div class="food-tags-inner">
+                  <span class="food-mini-tag">日料</span>
+                  <span class="food-mini-tag">晚餐</span>
+                  <span class="food-mini-tag">约会</span>
+                </div>
+                <div class="food-remark">环境安静，三文鱼刺身很新鲜</div>
+              </div>
+            </div>
+
+            <div class="food-card">
+              <div class="food-img b3">🧋</div>
+              <div class="food-info">
+                <div class="food-name">喜茶 · 芝芝莓莓</div>
+                <div class="food-stars">
+                  <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star empty">★</span>
+                </div>
+                <div class="food-tags-inner">
+                  <span class="food-mini-tag">奶茶</span>
+                  <span class="food-mini-tag">下午茶</span>
+                </div>
+                <div class="food-remark">莓果酸甜适口，甜度七分刚好</div>
+              </div>
+            </div>
+          </div>
+          <div class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-title">子页面 · 美食记录</div>
+  </div>
+
+  <!-- ===================== 烹饪管理 ===================== -->
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="app-content">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="status-right">
+            <svg viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="4" width="3" height="8" rx="1"/><rect x="5" y="2" width="3" height="10" rx="1"/><rect x="10" y="0" width="3" height="12" rx="1"/></svg>
+            <span style="font-size:11px;">100%</span>
+          </span>
+        </div>
+        <div class="back-bar">
+          <div class="left">
+            <span class="back-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6l-6 6 6 6"/></svg></span>
+            <span class="title">烹饪管理</span>
+          </div>
+        </div>
+
+        <div class="scroll-area" style="position:relative;">
+          <div class="food-tags">
+            <div class="food-tag active">全部菜谱</div>
+            <div class="food-tag">家常菜</div>
+            <div class="food-tag">面食</div>
+            <div class="food-tag">汤羹</div>
+            <div class="food-tag">甜品</div>
+          </div>
+
+          <div class="cook-list">
+            <div class="cook-card">
+              <div class="cook-img">🍅</div>
+              <div class="cook-info">
+                <div class="cook-name">番茄鸡蛋面</div>
+                <div class="cook-meta">
+                  <span class="cook-badge blue">简单</span>
+                  <span class="cook-badge">20 分钟</span>
+                </div>
+              </div>
+            </div>
+            <div class="cook-card">
+              <div class="cook-img g">🥬</div>
+              <div class="cook-info">
+                <div class="cook-name">蒜蓉炒时蔬</div>
+                <div class="cook-meta">
+                  <span class="cook-badge blue">简单</span>
+                  <span class="cook-badge">10 分钟</span>
+                </div>
+              </div>
+            </div>
+            <div class="cook-card">
+              <div class="cook-img r">🍖</div>
+              <div class="cook-info">
+                <div class="cook-name">红烧肉</div>
+                <div class="cook-meta">
+                  <span class="cook-badge blue">中等</span>
+                  <span class="cook-badge">90 分钟</span>
+                </div>
+              </div>
+            </div>
+            <div class="cook-card">
+              <div class="cook-img p">🍰</div>
+              <div class="cook-info">
+                <div class="cook-name">舒芙蕾松饼</div>
+                <div class="cook-meta">
+                  <span class="cook-badge blue">进阶</span>
+                  <span class="cook-badge">40 分钟</span>
+                </div>
+              </div>
+            </div>
+            <div class="cook-card">
+              <div class="cook-img">🍜</div>
+              <div class="cook-info">
+                <div class="cook-name">日式豚骨拉面</div>
+                <div class="cook-meta">
+                  <span class="cook-badge blue">进阶</span>
+                  <span class="cook-badge">120 分钟</span>
+                </div>
+              </div>
+            </div>
+            <div class="cook-card">
+              <div class="cook-img g">🍲</div>
+              <div class="cook-info">
+                <div class="cook-name">冬瓜排骨汤</div>
+                <div class="cook-meta">
+                  <span class="cook-badge blue">简单</span>
+                  <span class="cook-badge">60 分钟</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-title">子页面 · 烹饪管理</div>
+  </div>
+
+</div>
+
+<script>
+  // Todo tab switcher (scoped to the home phone's todo card)
+  document.querySelectorAll('.todo-card').forEach(card => {
+    const tabs = card.querySelectorAll('.ts-item');
+    const panels = card.querySelectorAll('.todo-scroll[data-panel]');
+    const counter = card.querySelector('.todo-count');
+    const updateCount = key => {
+      const panel = card.querySelector(`.todo-scroll[data-panel="${key}"]`);
+      if (!panel || !counter) return;
+      counter.textContent = panel.querySelectorAll('.todo-item').length + ' 项';
+    };
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const key = tab.dataset.tab;
+        tabs.forEach(t => t.classList.toggle('active', t === tab));
+        panels.forEach(p => p.hidden = p.dataset.panel !== key);
+        updateCount(key);
+      });
+    });
+    updateCount('today');
+  });
+
+  // Todo check toggle
+  document.querySelectorAll('.todo-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const check = item.querySelector('.todo-check');
+      const done = item.classList.toggle('done');
+      check.classList.toggle('done', done);
+      check.innerHTML = done
+        ? '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6l3 3 5-6"/></svg>'
+        : '';
+    });
+  });
+
+  // Drag-and-drop reordering for the "all apps" list
+  (function() {
+    const list = document.getElementById('apps-list');
+    if (!list) return;
+
+    const renumber = () => {
+      const rows = list.querySelectorAll('.app-row');
+      rows.forEach((row, idx) => {
+        row.querySelector('.app-order').textContent = idx + 1;
+        row.classList.toggle('hidden-row', idx >= 6);
+      });
+      // Reposition the "首页折叠" divider between item 6 and item 7
+      const divider = list.querySelector('.apps-divider');
+      if (divider && rows.length > 6) {
+        list.insertBefore(divider, rows[6]);
+      }
+    };
+
+    let dragging = null;
+    list.addEventListener('dragstart', e => {
+      const row = e.target.closest('.app-row');
+      if (!row) return;
+      dragging = row;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      // Firefox needs some data set
+      try { e.dataTransfer.setData('text/plain', ''); } catch (_) {}
+    });
+
+    list.addEventListener('dragend', () => {
+      if (dragging) dragging.classList.remove('dragging');
+      list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      dragging = null;
+      renumber();
+    });
+
+    list.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!dragging) return;
+      const target = e.target.closest('.app-row');
+      if (!target || target === dragging) return;
+      const rect = target.getBoundingClientRect();
+      const before = (e.clientY - rect.top) < rect.height / 2;
+      if (before) {
+        list.insertBefore(dragging, target);
+      } else {
+        list.insertBefore(dragging, target.nextSibling);
+      }
+    });
+  })();
+
+  // Toggle edit-mode label (prototype only)
+  const editToggle = document.getElementById('apps-edit-toggle');
+  if (editToggle) {
+    editToggle.addEventListener('click', () => {
+      const editing = editToggle.textContent.trim() === '排序';
+      editToggle.textContent = editing ? '完成' : '排序';
+      editToggle.style.color = editing ? 'var(--danger)' : 'var(--primary)';
+    });
+  }
+  // Anniversary tab switcher
+  document.querySelectorAll('.anni-list').forEach(list => {
+    const tabs = list.querySelectorAll('.anni-tab');
+    const panels = list.querySelectorAll('.anni-panel');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const key = tab.dataset.anni;
+        tabs.forEach(t => t.classList.toggle('active', t === tab));
+        panels.forEach(p => p.hidden = p.dataset.panel !== key);
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

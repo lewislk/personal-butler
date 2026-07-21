@@ -1,0 +1,131 @@
+# ---------------------------------------------
+# macOS 系统文件
+# ---------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# ---------------------------------------------
+# Xcode 用户配置 / 构建产物
+# ---------------------------------------------
+## Build generated
+build/
+DerivedData/
+
+## Various settings
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.moved-aside
+
+## Xcode Patch
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+/*.gcno
+**/xcshareddata/WorkspaceSettings.xcsettings
+
+# ---------------------------------------------
+# Swift Package Manager
+# ---------------------------------------------
+.build/
+.swiftpm/
+Packages/
+Package.pins
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+!Package.resolved
+
+# ---------------------------------------------
+# CocoaPods
+# ---------------------------------------------
+Pods/
+*.xcworkspace
+!default.xcworkspace
+
+# ---------------------------------------------
+# Carthage
+# ---------------------------------------------
+Carthage/Build/
+Carthage/Checkouts
+
+# ---------------------------------------------
+# Fastlane
+# ---------------------------------------------
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# ---------------------------------------------
+# 代码覆盖率 / Profiling
+# ---------------------------------------------
+*.gcov
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+
+# ---------------------------------------------
+# Playgrounds
+# ---------------------------------------------
+timeline.xctimeline
+playground.xcworkspace
+
+# ---------------------------------------------
+# Injection III
+# ---------------------------------------------
+iOSInjectionProject/
+
+# ---------------------------------------------
+# 编辑器 / IDE
+# ---------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---------------------------------------------
+# 日志 / 临时文件
+# ---------------------------------------------
+*.log
+*.tmp
+*.bak
+*.orig
+
+# ---------------------------------------------
+# 敏感信息（防止密钥/证书误提交）
+# ---------------------------------------------
+*.p12
+*.mobileprovision
+*.cer
+*.certSigningRequest
+GoogleService-Info.plist.local
+secrets.xcconfig
+Secrets.plist
+.env
+.env.*
+
+# AI
+.claude
+.codex
+.trae
