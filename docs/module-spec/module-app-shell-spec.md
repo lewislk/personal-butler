@@ -6,7 +6,8 @@
 
 本模块负责：
 
-- App 主入口（`@main`）与 SwiftData `ModelContainer` 初始化
+- App 主入口（`@main`）与 SwiftData `ModelContainer` **异步**初始化
+- **系统启动屏**（`LaunchScreen.storyboard`）与 SwiftUI 层过渡视图（`LaunchView`）两段接力，覆盖冷启全过程
 - 全局环境对象 `AppEnvironment`（数据变更广播、应用锁状态、最近同步时间）
 - 根路由 `AppRouter`（`NavigationStack.path` 驱动子页面 push/pop）
 - 底部三 Tab 枚举 `AppTab`
@@ -26,7 +27,29 @@
 
 App 唯一的 SwiftData 容器，一次性注册全部 10 个 `@Model`（Todo/Schedule/Anniversary/Password/OTP/Food/CookRecipe/Note/AppModule/AppSetting）。所有 View 通过 `@Environment(\.modelContext)` 直接读写，不再引入 Repository 层。
 
-对应代码：`App/PersonalButlerApp.swift` · `modelContainer` 闭包。
+**初始化位置**：`PersonalButlerApp.bootstrap()` 中 **异步** 构造（`Task.detached(priority: .userInitiated)`）。**不要**再改回 `let modelContainer: ModelContainer = { … }()` 属性初始化——那会让 SwiftUI Scene 拿不到首帧，冷启时用户看到的是系统 `UILaunchStoryboardName` 指定的启动屏（而不是 `LaunchView`），首启建库耗时（2~3s）全在这一段。`ModelContainer` 本身是 `Sendable`，可以在后台线程构造；只有 `mainContext` 访问必须回主线程。
+
+`.modelContainer(_:)` modifier 挂载在 **`RootView`** 上（不是 Scene），因为容器延迟到 `bootstrap()` 就绪后才存在。
+
+对应代码：`App/PersonalButlerApp.swift` · `bootstrap()`。
+
+### 启动屏两段接力（LaunchScreen + LaunchView）
+
+冷启视觉分两段，任一段缺失都会出现白屏：
+
+| 段 | 显示者 | 覆盖时段 | 能力 |
+|----|--------|----------|------|
+| 系统启动屏 | `personal-butler/LaunchScreen.storyboard` | App 进程冷启 → SwiftUI 首帧（约 2~3s，首启为主） | 静态：白底 + 主色 `#4A86E8` 圆角方块 + SF Symbol + 双行文字。**不能**放动画/`ProgressView`/自定义类/runtime attribute |
+| SwiftUI 过渡页 | `Presentation/Views/LaunchView.swift` | SwiftUI 首帧 → `ModelContainer` 就绪（`bootstrap()` 完成） | 动态：Logo 呼吸动画 + `ProgressView` 菊花 + 保底 0.6s 展示时长 |
+
+两段构图刻意对齐（同位置的 Logo、同标题），交接时用户视觉上是"Logo 突然开始呼吸 + 菊花出现"，无跳变。
+
+**pbxproj 配置**：Debug/Release 两份都必须是 `INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;`，**不能**同时保留 `INFOPLIST_KEY_UILaunchScreen_Generation = YES;`（互斥）。
+
+**踩坑速查**（详见 [[knowledge/2026-07-22-launch-white-screen]]）：
+
+- LaunchScreen.storyboard 不允许 `<userDefinedRuntimeAttribute>`（`layer.cornerRadius` 等）→ 圆角方块用 `app.fill` SF Symbol 染色实现
+- iOS 会给启动屏拍快照缓存，改 storyboard 后**必须卸载重装或重启设备**才看得到新效果
 
 ### AppEnvironment
 
@@ -72,7 +95,9 @@ App 唯一的 SwiftData 容器，一次性注册全部 10 个 `@Model`（Todo/Sc
 
 | 入口/职责 | 文件 | 说明 |
 |-----------|------|------|
-| App 主入口 | `personal-butler/App/PersonalButlerApp.swift` | `@main struct PersonalButlerApp: App`；初始化 ModelContainer、注入 env、锁定简体中文 locale、设置主色 tint |
+| App 主入口 | `personal-butler/App/PersonalButlerApp.swift` | `@main struct PersonalButlerApp: App`；`bootstrap()` 异步建 ModelContainer + 跑 SeedData；就绪前渲染 `LaunchView`、就绪后切 `RootView` |
+| 系统启动屏 | `personal-butler/LaunchScreen.storyboard` | 冷启（进程加载 → SwiftUI 首帧）阶段展示；视觉与 `LaunchView` 静态部分对齐；`INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen` 引用 |
+| SwiftUI 过渡页 | `personal-butler/Presentation/Views/LaunchView.swift` | SwiftUI 首帧 → 业务就绪阶段展示；Logo 呼吸动画 + ProgressView 菊花 |
 | 全局环境 | `personal-butler/App/AppEnvironment.swift` | `dataChanged` / `isUnlocked` / `lastSyncTime` / `markSynced()` |
 | 根路由 | `personal-butler/App/AppRouter.swift` | `@Published var path: [String]` + `open / back / popToRoot` |
 | Tab 枚举 | `personal-butler/App/AppTab.swift` | `enum AppTab { home, allApp, mine }` |
@@ -85,26 +110,50 @@ App 唯一的 SwiftData 容器，一次性注册全部 10 个 `@Model`（Todo/Sc
 
 ### App 启动初始化
 
-**代码入口：** `App/PersonalButlerApp.swift` · `PersonalButlerApp.body`
+**代码入口：** `App/PersonalButlerApp.swift` · `PersonalButlerApp.body` + `bootstrap()`
 
 **业务规则：**
 
-- 一次性构建包含全部 `@Model` 的 SwiftData Schema
-- 挂载唯一 `ModelContainer` 到 SwiftUI 环境（`.modelContainer(...)`）
-- 注入唯一 `AppEnvironment`（`@StateObject`），供跨页面广播/状态共享
-- 强制 UI locale 为 `zh-Hans`，主题 tint 为 `AppColorTheme.primary`
+- 冷启用户视觉：**系统启动屏（storyboard）→ `LaunchView`（SwiftUI）→ 淡入 `RootView` 主页**，全程无白屏
+- `ModelContainer` 建库 / 迁移必须在**后台**执行，不能阻塞 SwiftUI 首帧
+- `SeedData.ensureSeeded` 必须在 `ModelContainer` 就绪且回到 `@MainActor` 后执行（`mainContext` 是主线程约束）
+- 保底展示 `LaunchView` 最少 0.6s，避免二次启动秒过导致视觉突兀
 - 若 SwiftData 初始化失败直接 `fatalError`（本地存储是硬依赖，无兜底）
+- 强制 UI locale 为 `zh-Hans`，主题 tint 为 `AppColorTheme.primary`
 
 **实现逻辑：**
 
-1. 声明 `let modelContainer: ModelContainer = { … }()`
-2. Schema 中 append 全部 10 个 `@Model` 类型
-3. `ModelConfiguration(isStoredInMemoryOnly: false)`（生产模式）
-4. WindowGroup 内挂载 `RootView().environmentObject(env)` → `.modelContainer(modelContainer)`
+1. `@State private var modelContainer: ModelContainer?`（未就绪为 nil）
+2. `WindowGroup` body：`modelContainer` 非 nil → `RootView().modelContainer(container)`；否则 `LaunchView().task { await bootstrap() }`。切换用 `.transition(.opacity)` + `.animation(_:value:)` 淡入淡出
+3. `bootstrap()`：
+   1. `Task.detached(priority: .userInitiated) { … }` 后台构造 `ModelContainer`（`Schema([TodoItem.self, …])` + `ModelConfiguration(isStoredInMemoryOnly: false)`）
+   2. 回主线程后调 `SeedData.ensureSeeded(in: container.mainContext)`
+   3. 若耗时 < 0.6s 补 `Task.sleep`
+   4. 赋值 `modelContainer = container` → SwiftUI 切换到 `RootView`
+
+> **重要**：`SeedData` 由 `PersonalButlerApp.bootstrap()` 集中调用，请**不要**同时在 `MainTabView.task` 里重复调用（虽然幂等，但违反单一起点原则）。
+
+### 冷启白屏兜底（系统启动屏）
+
+**代码入口：** `personal-butler/LaunchScreen.storyboard` + `project.pbxproj · INFOPLIST_KEY_UILaunchStoryboardName`
+
+**业务规则：**
+
+- 系统启动屏必须存在且配置生效（`INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen`），**不能**回退到自动生成的空白启动屏（`INFOPLIST_KEY_UILaunchScreen_Generation = YES`）
+- 视觉与 `LaunchView` 的静态部分对齐（背景色、Logo 尺寸/位置/颜色、标题文案），交接时用户无跳变
+- storyboard 内**只能**静态图片、系统色、SF Symbol、AutoLayout；**不能**放动画、`ProgressView`、自定义类、user-defined runtime attribute
+- 若需圆角/阴影：用 SF Symbol（如 `app.fill`）染色叠加代替 `layer.cornerRadius`
+
+**实现逻辑：**
+
+1. 底层 `UIImageView`：`app.fill` SF Symbol，`tintColor` 设为主色 `#4A86E8`，96×96 居中偏上
+2. 上层 `UIImageView`：`person.crop.circle.badge.checkmark` SF Symbol，白色，46×46 居中于底层
+3. 下方 `UILabel`：主标题「私人管家」24pt semibold + 副标题「你的生活，尽在掌握」13pt
+4. `project.pbxproj` Debug/Release 两份 build settings 里删除 `INFOPLIST_KEY_UILaunchScreen_Generation = YES`，加 `INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen`
 
 ### 首启种子写入
 
-**代码入口：** `Presentation/Views/MainTab/MainTabView.swift` · `.task { SeedData.ensureSeeded(in: context) }`
+**代码入口：** `App/PersonalButlerApp.swift` · `bootstrap()` 内 `SeedData.ensureSeeded(in: container.mainContext)`
 
 **业务规则：**
 
@@ -114,11 +163,11 @@ App 唯一的 SwiftData 容器，一次性注册全部 10 个 `@Model`（Todo/Sc
 
 **实现逻辑：**
 
-1. `SeedData.ensureSeeded(in: context)`
+1. `bootstrap()` 拿到 `ModelContainer` 后调 `SeedData.ensureSeeded(in: container.mainContext)`
 2. `context.fetch(FetchDescriptor<AppModule>())` 判空
 3. 空则依次 `seedAppModules / seedSchedules / …`，最后 `context.save()`
 
-> 该逻辑放在 `MainTabView.task` 而非 `PersonalButlerApp.init()`，因为 `@Environment(\.modelContext)` 需要视图层才能拿到。
+> 该逻辑之前放在 `MainTabView.task`（历史文档中的旧描述）；已迁移到 `PersonalButlerApp.bootstrap()`，与 `ModelContainer` 就绪时机原子对齐——这样 `LaunchView` 关闭时数据一定就绪，主页首帧不会看到空态。
 
 ### 子页面路由
 
@@ -181,6 +230,9 @@ App 唯一的 SwiftData 容器，一次性注册全部 10 个 `@Model`（Todo/Sc
   - `personal-butler/App/AppColorTheme.swift`
   - `personal-butler/Presentation/Views/RootView.swift`
   - `personal-butler/Presentation/Views/AppModuleRouter.swift`
+  - `personal-butler/Presentation/Views/LaunchView.swift`
+  - `personal-butler/LaunchScreen.storyboard`
 - 文档：
   - `docs/PRD.md § 2 全局设计规范`
   - `CLAUDE_BACK.md § 一/§ 三`（历史技术栈与目录规划）
+  - `knowledge/2026-07-22-launch-white-screen.md`（冷启白屏 / 启动屏两段接力踩坑）

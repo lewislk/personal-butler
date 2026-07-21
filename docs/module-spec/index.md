@@ -48,3 +48,4 @@ Core 通用能力（横切底座）：
 - 找"同步接口 / JSON 结构"：[module-backup-sync-spec.md](./module-backup-sync-spec.md) + `personal-butler/Data/Mapper/SyncPayload.swift`
 - 找"主页待办为什么会自动出现某条日程 / 纪念日"：[module-main-tab-spec.md § 主页 · 今日/近期待办聚合](./module-main-tab-spec.md#主页--今日待办聚合)
 - 找"如何新增一个功能模块"：见 [project-spec.md § 服务级约定 · 路由 id 稳定](./project-spec.md#6-服务级约定)
+- 找"App 启动为什么白屏 / 启动屏和 LaunchView 的分工"：[module-app-shell-spec.md § 启动屏两段接力](./module-app-shell-spec.md#启动屏两段接力launchscreen--launchview) + `knowledge/2026-07-22-launch-white-screen.md`

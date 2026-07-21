@@ -146,6 +146,12 @@ LAN HTTP (仅用户手动触发)  ←── BackupSyncUseCase.upload / download
 - `LocalAuthService.authenticate` 是 `async`，调用点用 `.task { ... }` 或 `Task { ... }`
 - `BackupSyncUseCase` 标 `@MainActor`；网络操作 `async throws`
 
+### 启动初始化（改前必读）
+
+- `ModelContainer` **必须**在 `PersonalButlerApp.bootstrap()` 里**异步**构造（`Task.detached`），**禁止**改回 `let modelContainer = { … }()` 属性初始化——那会阻塞 SwiftUI 首帧，冷启出现 2~3s 白屏。详见 [module-app-shell-spec § 启动屏两段接力](./docs/module-spec/module-app-shell-spec.md#启动屏两段接力launchscreen--launchview)
+- 冷启视觉必须两段接力：`LaunchScreen.storyboard`（系统）→ `LaunchView`（SwiftUI）。禁止把 `INFOPLIST_KEY_UILaunchStoryboardName` 换回 `INFOPLIST_KEY_UILaunchScreen_Generation = YES`
+- `SeedData.ensureSeeded` 只在 `bootstrap()` 一处调用，不要在 `MainTabView.task` 等其它位置重复调
+
 ---
 
 ## 7. 已知 MVP 状态（不要当 bug 修）

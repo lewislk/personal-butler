@@ -11,6 +11,10 @@ struct AnniversaryView: View {
     @Query(sort: \Anniversary.date) private var list: [Anniversary]
     @State private var mode: AnniversaryType = .yearly
     @State private var showCreate = false
+    @State private var editingAnni: Anniversary?
+    @State private var pendingDelete: Anniversary?
+    /// 当前处于展开态（已左滑露出删除按钮）的纪念日 id；同一时刻最多一个
+    @State private var openSwipeId: UUID?
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -32,13 +36,41 @@ struct AnniversaryView: View {
                 }
             }
             .background(Color.white)
+            // 点击任何空白区收起已展开的滑动行
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    if openSwipeId != nil {
+                        openSwipeId = nil
+                    }
+                }
+            )
+            // 切类型时也顺手收起
+            .onChange(of: mode) { _, _ in openSwipeId = nil }
 
             FABAddButton { showCreate = true }
         }
         .navigationTitle("纪念日")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showCreate) {
-            CreateAnniversarySheet()
+            EditAnniversarySheet(anniversary: nil)
+        }
+        .sheet(item: $editingAnni) { a in
+            EditAnniversarySheet(anniversary: a)
+        }
+        .alert("删除该纪念日？",
+               isPresented: Binding(get: { pendingDelete != nil },
+                                    set: { if !$0 { pendingDelete = nil } })) {
+            Button("取消", role: .cancel) { pendingDelete = nil }
+            Button("删除", role: .destructive) {
+                if let a = pendingDelete {
+                    context.delete(a)
+                    try? context.save()
+                }
+                pendingDelete = nil
+                openSwipeId = nil
+            }
+        } message: {
+            Text(pendingDelete.map { "「\($0.name)」删除后不可恢复。" } ?? "")
         }
     }
 
@@ -100,19 +132,28 @@ struct AnniversaryView: View {
     }
 
     private func anniRow(_ a: Anniversary) -> some View {
-        HStack {
-            Circle()
-                .fill(a.type == .yearly ? AppColorTheme.success : AppColorTheme.primary)
-                .frame(width: 6, height: 6)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(a.name).font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AppColorTheme.text)
-                Text(labelForDate(a)).font(.system(size: 12)).foregroundStyle(AppColorTheme.textSub)
+        SwipeToDeleteRow(
+            isOpen: Binding(
+                get: { openSwipeId == a.id },
+                set: { openSwipeId = $0 ? a.id : nil }
+            ),
+            onTap: { editingAnni = a },
+            onDelete: { pendingDelete = a }
+        ) {
+            HStack {
+                Circle()
+                    .fill(a.type == .yearly ? AppColorTheme.success : AppColorTheme.primary)
+                    .frame(width: 6, height: 6)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(a.name).font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(AppColorTheme.text)
+                    Text(labelForDate(a)).font(.system(size: 12)).foregroundStyle(AppColorTheme.textSub)
+                }
+                Spacer()
+                badge(a)
             }
-            Spacer()
-            badge(a)
+            .padding(.horizontal, 20).padding(.vertical, 14)
         }
-        .padding(.horizontal, 20).padding(.vertical, 14)
     }
 
     private func badge(_ a: Anniversary) -> some View {
@@ -140,15 +181,30 @@ struct AnniversaryView: View {
     }
 }
 
-struct CreateAnniversarySheet: View {
+// MARK: - 新增 / 编辑纪念日弹窗
+struct EditAnniversarySheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
-    @State private var name = ""
-    @State private var date = Date()
-    @State private var type: AnniversaryType = .yearly
-    @State private var isLunar = false
-    @State private var emoji = "🎉"
+    /// 传 nil 表示新增，传入实例表示编辑
+    let anniversary: Anniversary?
+
+    @State private var name: String
+    @State private var date: Date
+    @State private var type: AnniversaryType
+    @State private var isLunar: Bool
+    @State private var emoji: String
+
+    init(anniversary: Anniversary?) {
+        self.anniversary = anniversary
+        _name = State(initialValue: anniversary?.name ?? "")
+        _date = State(initialValue: anniversary?.date ?? Date())
+        _type = State(initialValue: anniversary?.type ?? .yearly)
+        _isLunar = State(initialValue: anniversary?.isLunar ?? false)
+        _emoji = State(initialValue: anniversary?.emoji ?? "🎉")
+    }
+
+    private var isEditing: Bool { anniversary != nil }
 
     var body: some View {
         NavigationStack {
@@ -167,21 +223,35 @@ struct CreateAnniversarySheet: View {
                     Toggle("按农历重复", isOn: $isLunar)
                 }
             }
-            .navigationTitle("新增纪念日")
+            .navigationTitle(isEditing ? "编辑纪念日" : "新增纪念日")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
-                        let a = Anniversary(name: name.isEmpty ? "未命名" : name,
-                                            date: date, isLunar: isLunar,
-                                            type: type, emoji: emoji)
-                        context.insert(a)
-                        try? context.save()
+                        save()
                         dismiss()
                     }
                 }
             }
         }
+    }
+
+    private func save() {
+        let finalName = name.isEmpty ? "未命名" : name
+        let finalEmoji = emoji.isEmpty ? "🎉" : emoji
+        if let a = anniversary {
+            a.name = finalName
+            a.date = date
+            a.isLunar = isLunar
+            a.typeRaw = type.rawValue
+            a.emoji = finalEmoji
+        } else {
+            let a = Anniversary(name: finalName,
+                                date: date, isLunar: isLunar,
+                                type: type, emoji: finalEmoji)
+            context.insert(a)
+        }
+        try? context.save()
     }
 }
