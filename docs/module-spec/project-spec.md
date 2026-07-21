@@ -20,7 +20,7 @@
 - 广告 / 推荐 / 社区 / 埋点上报
 - 与外部日历（iCloud Calendar / Google Calendar）双向同步
 - 服务端实现（局域网 HTTP 服务端由用户自建）
-- OCR / AI 内容识别（如二维码解析 otpauth 已列在 PRD 二期规划，暂未实现）
+- OCR / AI 内容识别（`otpauth` 二维码扫描已落地，见 password-otp 模块；其它识别场景不在范围内）
 
 易混边界：
 
