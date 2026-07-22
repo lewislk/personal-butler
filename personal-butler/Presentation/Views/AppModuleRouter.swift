@@ -36,7 +36,7 @@ struct ComingSoonView: View {
         VStack(spacing: 12) {
             Image(systemName: "sparkles")
                 .font(.system(size: 40))
-                .foregroundStyle(AppColorTheme.primary.opacity(0.6))
+                .foregroundStyle(AppColorTheme.primary.opacity(0))
             Text(title).font(.system(size: 16, weight: .semibold))
             Text("二期功能，敬请期待").font(.system(size: 13)).foregroundStyle(AppColorTheme.textSub)
         }

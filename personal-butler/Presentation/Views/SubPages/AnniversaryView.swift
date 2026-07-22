@@ -211,7 +211,9 @@ struct EditAnniversarySheet: View {
             Form {
                 Section {
                     TextField("名称（如 妈妈生日）", text: $name)
-                    TextField("Emoji", text: $emoji)
+                }
+                Section("图标") {
+                    EmojiPickerRow(selection: $emoji)
                 }
                 Section {
                     Picker("类型", selection: $type) {
@@ -253,5 +255,91 @@ struct EditAnniversarySheet: View {
             context.insert(a)
         }
         try? context.save()
+    }
+}
+
+// MARK: - 常用 Emoji 选择器
+/// 纪念日场景常用 Emoji 选择器：预置常用图标网格 + 支持自定义输入。
+/// 不引入系统键盘 Emoji 面板的原因：用户对"改成常用 Emoji 的选择器"的诉求就是
+/// 一次点击直达，不要在 TextField 里切键盘 → 找 Emoji 分类 → 挑选。
+private struct EmojiPickerRow: View {
+    @Binding var selection: String
+    @State private var showCustom = false
+    @State private var customText: String = ""
+
+    /// 纪念日场景高频 Emoji（生日 / 婚庆 / 家庭 / 成就 / 节日 / 旅行 …）
+    private static let presets: [String] = [
+        "🎉", "🎂", "🎁", "❤️", "💍", "💐",
+        "👶", "🎓", "🏠", "✈️", "🌸", "🌟",
+        "🎊", "🕯️", "🎈", "🍰", "💑", "👨‍👩‍👧",
+        "🐾", "📅", "🥂", "🌈", "🙏", "✨"
+    ]
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Text(selection.isEmpty ? "🎉" : selection)
+                    .font(.system(size: 30))
+                    .frame(width: 48, height: 48)
+                    .background(Color(hex: 0xF4F6F8))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("当前图标").font(.system(size: 12)).foregroundStyle(AppColorTheme.textSub)
+                    Text("点选下方常用 Emoji，或自定义").font(.system(size: 12)).foregroundStyle(AppColorTheme.textSub)
+                }
+                Spacer()
+                Button {
+                    customText = selection
+                    showCustom = true
+                } label: {
+                    Text("自定义")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppColorTheme.primary)
+                }
+            }
+
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(Self.presets, id: \.self) { e in
+                    Button {
+                        selection = e
+                    } label: {
+                        Text(e)
+                            .font(.system(size: 22))
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(selection == e ? Color(hex: 0xEEF3FD) : Color(hex: 0xF4F6F8))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(selection == e ? AppColorTheme.primary : Color.clear, lineWidth: 1.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .alert("自定义 Emoji", isPresented: $showCustom) {
+            TextField("输入一个 Emoji", text: $customText)
+            Button("取消", role: .cancel) { }
+            Button("使用") {
+                let picked = firstEmoji(in: customText)
+                if !picked.isEmpty { selection = picked }
+            }
+        } message: {
+            Text("只取输入的第一个 Emoji 字符。")
+        }
+    }
+
+    /// 从字符串里挑出第一个可视 Emoji 字符（cluster）；若无，返回空串。
+    private func firstEmoji(in s: String) -> String {
+        for ch in s where ch.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation || $0.properties.isEmoji }) {
+            return String(ch)
+        }
+        // 兜底：非 Emoji 也允许（例如 "生"），保留旧行为
+        return s.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1).description
     }
 }
