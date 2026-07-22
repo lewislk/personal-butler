@@ -194,6 +194,11 @@ struct EditAnniversarySheet: View {
     @State private var type: AnniversaryType
     @State private var isLunar: Bool
     @State private var emoji: String
+    @FocusState private var isNameFocused: Bool
+    /// 日期行是否展开内嵌日历（用来替换默认 compact 的悬浮日历——它选完不会自动收起）
+    @State private var isDatePickerExpanded = false
+    /// 悬浮日历打开时的基准日期：用来区分"用户切换年/月（不关闭）"和"用户点选具体某一天（关闭）"
+    @State private var pickerAnchor: Date = Date()
 
     init(anniversary: Anniversary?) {
         self.anniversary = anniversary
@@ -210,23 +215,103 @@ struct EditAnniversarySheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("名称（如 妈妈生日）", text: $name)
+                    HStack(spacing: 8) {
+                        TextField("名称（如 妈妈生日）", text: $name)
+                            .focused($isNameFocused)
+                        // 快速清除：仅有内容时出现；清空后保持聚焦便于继续输入
+                        if !name.isEmpty {
+                            Button {
+                                name = ""
+                                isNameFocused = true
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(AppColorTheme.textSub)
+                            }
+                            .buttonStyle(.plain)
+                            .transition(.opacity)
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.15), value: name.isEmpty)
                 }
                 Section("图标") {
                     EmojiPickerRow(selection: $emoji)
+                        // 用户开始挑图标 = 输入名称告一段落，主动收键盘
+                        .onChange(of: emoji) { _, _ in isNameFocused = false }
                 }
                 Section {
                     Picker("类型", selection: $type) {
                         Text("每年重复").tag(AnniversaryType.yearly)
                         Text("累计天数").tag(AnniversaryType.cumulative)
                     }
-                    DatePicker(type == .yearly ? "纪念日" : "起始日",
-                               selection: $date, displayedComponents: [.date])
+                    // 系统 .compact DatePicker 选完不会自动关闭悬浮气泡；
+                    // 这里改成点行 → 弹出半屏悬浮日历 → 选到日期立即关闭。
+                    Button {
+                        isNameFocused = false
+                        isDatePickerExpanded = true
+                    } label: {
+                        HStack {
+                            Text(type == .yearly ? "纪念日" : "起始日")
+                                .foregroundStyle(AppColorTheme.text)
+                            Spacer()
+                            Text(DateCalculator.gregorianDateLabel(date))
+                                .font(.system(size: 15))
+                                .foregroundStyle(isDatePickerExpanded ? AppColorTheme.primary : AppColorTheme.text)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     Toggle("按农历重复", isOn: $isLunar)
+                    HStack {
+                        Text("对应农历")
+                            .font(.system(size: 13))
+                            .foregroundStyle(AppColorTheme.textSub)
+                        Spacer()
+                        Text(DateCalculator.lunarString(from: date))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(AppColorTheme.text)
+                    }
                 }
             }
             .navigationTitle(isEditing ? "编辑纪念日" : "新增纪念日")
             .navigationBarTitleDisplayMode(.inline)
+            // 兜底：滚动 Form 即收键盘（挑 Emoji / 展开日历时下拉都能触发）
+            .scrollDismissesKeyboard(.immediately)
+            .sheet(isPresented: $isDatePickerExpanded) {
+                NavigationStack {
+                    ScrollView {
+                        DatePicker("", selection: $date, displayedComponents: [.date])
+                            .datePickerStyle(.graphical)
+                            .environment(\.locale, Locale(identifier: "zh_CN"))
+                            .labelsHidden()
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                    }
+                    .navigationTitle("选择日期")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { isDatePickerExpanded = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                // 打开时记住基准年月，只有在"年月未变、日发生变化"时才判定为点选了具体日期。
+                // 若比较 date 整体，切换年份/月份也会触发关闭。
+                .onAppear { pickerAnchor = date }
+                .onChange(of: date) { _, new in
+                    let cal = Calendar.current
+                    let anchor = cal.dateComponents([.year, .month, .day], from: pickerAnchor)
+                    let now = cal.dateComponents([.year, .month, .day], from: new)
+                    if anchor.year == now.year, anchor.month == now.month, anchor.day != now.day {
+                        isDatePickerExpanded = false
+                    } else {
+                        // 年 / 月被切换：更新基准，等待用户点具体的日
+                        pickerAnchor = new
+                    }
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

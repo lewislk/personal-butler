@@ -55,7 +55,7 @@ struct SyncPayload: Codable {
 | Method | Path | 用途 | 已实现 |
 |--------|------|------|--------|
 | POST | `/sync/upload` | 上传本机全量数据 | ✅ |
-| GET | `/sync/download` | 拉取本设备备份 | ✅（`restore` 未真正覆盖，占位） |
+| GET | `/sync/download` | 拉取本设备备份 | ✅ |
 | GET | `/sync/info` | 查询备份摘要 | ❌（MVP 未实现） |
 | DELETE | `/sync/clear` | 清空本设备备份 | ❌（MVP 未实现） |
 
@@ -70,7 +70,7 @@ struct SyncPayload: Codable {
 | Payload 定义 | `Data/Mapper/SyncPayload.swift` | Codable DTO |
 | 用例 | `Domain/UseCases/BackupSyncUseCase.swift` | `buildPayload / upload / download / restore` |
 | 局域网同步 UI | `Presentation/Views/SubPages/LanSyncView.swift` | 从 MineView `.sheet` 弹出 |
-| 本地备份 UI | `Presentation/Sheets/LocalBackupSheet.swift` | 从 MineView `.sheet` 弹出 |
+| 本地备份 UI | `Presentation/Sheets/LocalBackupSheet.swift` | 从 MineView `.sheet` 弹出；导出 + 从文件恢复共用同一张 sheet |
 | 服务器配置 | `App/AppSyncConfig.swift` | UserDefaults 读写 |
 | 生物识别 | `Core/Auth/LocalAuthService.swift` | 所有操作前必调 |
 | 敏感数据 | `Core/Utils/KeychainManager.swift` | 组装 payload 时读明文 |
@@ -100,26 +100,35 @@ struct SyncPayload: Codable {
    - OTP 密钥：`KeychainManager.load($0.secretKeychainKey) ?? ""`
 4. 组合 `SyncData(...)`，再 `SyncPayload(syncMeta:, data:)`
 
-### 本地 JSON 备份导出
+### 本地 JSON 备份导出 / 导入
 
-**代码入口：** `LocalBackupSheet.swift` · `doExport()` async
+**代码入口：** `LocalBackupSheet.swift` · `doExport()` / `doImport(url:)`（同一张 sheet 承担导出 + 从文件恢复；MineView 的"数据备份 / 恢复"单一入口打开这里）
 
 **业务规则：**
 
-- 触发前必调 `LocalAuthService.authenticate(reason: "导出备份")`
-- 备份文件文件名：`PersonalButler_yyyyMMdd_HHmmss.json`
-- 落到 `FileManager.default.temporaryDirectory`
-- 展示 `ShareLink(item: url)`，供用户分享到「文件 App / iCloud Drive / AirDrop」
-- 明确警告：文件内包含密码/2FA 密钥明文
+- 导出与导入前都必调 `LocalAuthService.authenticate(...)`
+- 备份文件名：`PersonalButler_yyyyMMdd_HHmmss.json`，落到 `FileManager.default.temporaryDirectory`
+- **文件落地在 App 沙盒 `tmp/`，用户看不到、系统会回收** —— 导出成功后必须由用户点 `ShareLink` → "存储到文件" 才算真正保存。UI 上用一个高亮 Section（橙色 `exclamationmark.triangle.fill` + 大号 ShareLink 按钮 + 文件名 + 明确提示）承担引导；文案强调"生成 ≠ 已保存"
+- 导入通过 `.fileImporter(allowedContentTypes: [.json])` 选取文件，选定后弹 `.alert` 二次确认（destructive 按钮"确认覆盖"），确认后走 `BackupSyncUseCase.restore` 全量覆盖
+- 明确警告：文件内包含密码/2FA 密钥明文；恢复不可撤销
+
+**为什么不改成 Documents 目录：** 落 Documents + Info.plist `UIFileSharingEnabled` 能让文件在"文件 App / 我的 iPhone / PersonalButler" 下直接可见，但会把整个 App 沙盒对文件 App 开放（用户能看到 SwiftData 的 SQLite、缓存等所有内部文件），对隐私管家类应用不合适。tmp + ShareLink 路径下用户主动选目标位置，反而是更干净的边界；代价是"必须点分享"，用 UI 强引导消化。
 
 **实现逻辑：**
 
-1. 生物识别 → 通过后进入 do-block
+导出（`doExport`）：
+1. `guard !running` 防抖 + 生物识别
 2. `let payload = try uc.buildPayload()`
-3. `JSONEncoder().outputFormatting = [.prettyPrinted]`
-4. `enc.encode(payload)` → `data.write(to: url)`
-5. `exportURL = url`；Section 中出现 ShareLink 按钮
-6. 异常 → `message = "导出失败：\(error.localizedDescription)"`
+3. `JSONEncoder().outputFormatting = [.prettyPrinted]` → `enc.encode(payload)` → `data.write(to: url)`
+4. `exportURL = url`；渲染专门的"待保存"Section（橙色警示 + `ShareLink(item: url)`）
+5. 异常 → `message = "生成备份文件失败：..."` 并把 `exportURL` 置 nil，避免残留旧文件 URL 让用户误以为还可分享
+
+导入（`doImport(url:)`）：
+1. `guard !running` 防抖 + 生物识别
+2. `url.startAccessingSecurityScopedResource()`（fileImporter 给的是 security-scoped URL），`defer` 里 stop
+3. `let data = try Data(contentsOf: url)` → `try JSONDecoder().decode(SyncPayload.self, from: data)`
+4. `try uc.restore(payload)` — 走与局域网下载相同的 clear + rebuild + Keychain 三段处理
+5. `DecodingError` 单独 catch → "备份文件格式无效：..."
 
 ### 局域网上传
 
@@ -132,19 +141,23 @@ struct SyncPayload: Codable {
 - 请求超时 10 秒
 - POST body 为完整 `SyncPayload` JSON
 - 成功后 `env.markSynced()` 记录时间；UI 展示 "上传成功"
+- **并发保护**：服务端按 `X-Device-ID` 做进程内 `TryLock` 单飞（`sync.Map[deviceID]*sync.Mutex`），上一次 upload/clear 未结束前重复调用会立即回 `code=2003 sync in progress`；客户端 UI 层也应在 `doUpload()` 期间 disabled 按钮做本地防抖
 
 **实现逻辑：**
 
 1. `LanSyncView.doUpload`:
-   - `guard await LocalAuthService.authenticate(...) else { return }`
+   - `guard !running else { return }`（Face ID 期间也算忙，防重复触发）
    - `running = true; defer { running = false }`
+   - `guard await LocalAuthService.authenticate(...) else { return }`
    - `try await uc.upload()` → `env.markSynced()` + `message = "上传成功"`
+   - `catch SyncError.inProgress` → `message = "上一次同步还在进行，请稍后重试"`
    - `catch` → `message = "上传失败：\(error.localizedDescription)"`
 2. `BackupSyncUseCase.upload`:
    - `let payload = try buildPayload()`
    - `var req = try makeRequest(path: "/sync/upload", method: "POST")`
    - `req.httpBody = try JSONEncoder().encode(payload)`
-   - `_ = try await URLSession.shared.data(for: req)`（当前未解析 `SyncResponse.code`，只要 URL 请求不抛错即视为成功）
+   - `let (data, _) = try await URLSession.shared.data(for: req)`
+   - `_ = try decodeResponse(data, as: Empty.self)` — 解析 `{code, msg, data?}`，`code=0` 成功、`code=2003` 抛 `SyncError.inProgress`、其它非零抛 `SyncError.server(code, msg)`
 3. `makeRequest`:
    - `guard !AppSyncConfig.host.isEmpty else throw serverEmpty`
    - `URL = "http://\(host):\(defaultPort)\(path)"`
@@ -157,9 +170,11 @@ struct SyncPayload: Codable {
 **业务规则：**
 
 - 生物识别通过后 GET `/sync/download`
-- 解析 `SyncResponse<SyncPayload>`（`{code, msg, data}` 包装）
+- 解析 `APIResp<SyncPayload>`（`{code, msg, data}` 包装），根据 code 走 `SyncError` 分支
 - 拿到 `payload.data` 后调 `restore(payload)`
-- **MVP：`restore` 仅 `context.save()` 占位，不真正覆盖本地数据**（避免误删）；生产版本应先清空表再批量插入 + Keychain 覆盖
+- **`restore` 全量覆盖语义**：先 `clearAllSyncedEntities()` 清空所有可同步 @Model，再按 payload 各 list 反序列化 `context.insert`，最后一次 `context.save()`；中途抛错 `context.rollback()`。整个过程关闭 `context.autosaveEnabled`，防止 SwiftUI 让出主线程时 autosave 提前落盘。
+- **Keychain 处理**：先收集旧 `pwd.*` / `otp.*` key，`save()` 成功后再删；新记录用 `pwd.<uuid>` / `otp.<uuid>`（UUID 复用 `@Model.id`）；rebuild 抛错时反向清理已写入的新 key，旧 Keychain 不动，保证失败时旧密码仍可用。
+- **不参与 restore**：`AppSetting`（未纳入 `SyncPayload.setting`，AGENTS.md §7）
 - 成功后 `markSynced()`；失败 UI 展示错误信息
 
 **实现逻辑：**
@@ -167,9 +182,14 @@ struct SyncPayload: Codable {
 1. `BackupSyncUseCase.download`:
    - `let req = try makeRequest(path: "/sync/download", method: "GET")`
    - `let (data, _) = try await URLSession.shared.data(for: req)`
-   - `struct Wrap: Codable { code: Int; msg: String; data: SyncPayload? }`
-   - `try? JSONDecoder().decode(Wrap.self, from: data)` → `wrap.data` → 否则 `SyncError.decode`
-2. `restore(_ payload:)` MVP：`_ = payload; try context.save()`（占位）
+   - `let wrap = try decodeResponse(data, as: SyncPayload.self)` — 复用 upload 同一套 code 分派逻辑
+   - `guard let payload = wrap.data else { throw SyncError.decode }`
+2. `restore(_ payload:)`：
+   - 收集旧 Keychain key（`existingPwds.map { $0.passwordKeychainKey } + existingOTPs.map { $0.secretKeychainKey }`）
+   - `context.autosaveEnabled = false`（`defer` 里恢复）
+   - `clearAllSyncedEntities()` — 逐条 `context.delete(obj)`（**不**用 `context.delete(model:)` 批量，那绕过 context pending queue，rollback 撤不回）
+   - `rebuild(from:newKeychainKeys:)` — 各 DTO → `context.insert(@Model)`；Password/OTP 先 `KeychainManager.save` 再 insert，key 累积到 `newKeychainKeys`
+   - `try context.save()` 成功 → 遍历 oldKeychainKeys 清理；失败 → `context.rollback()` + 遍历 newKeychainKeys 清理，throw
 3. UI 层：`env.markSynced()`；message = "恢复成功"
 
 ### 错误处理
@@ -181,6 +201,9 @@ struct SyncPayload: Codable {
 | `.serverEmpty` | `AppSyncConfig.host.isEmpty` | 请先配置同步服务器地址 |
 | `.network(let m)` | 预留网络错误封装（当前未主动抛，`URLSession` 原生错误也会经 `error.localizedDescription` 呈现） | 网络错误：… |
 | `.decode` | download 返回体解码失败 / `data == nil` | 服务端返回数据无法解析 |
+| `.inProgress` | 服务端 `code=2003`：同一 device 已有 upload/clear 事务在跑（`SyncService.deviceLocks` TryLock 失败） | 上一次同步还在进行，请稍后重试 |
+| `.noBackup` | 服务端 `code=2002`：该 device 尚未上传过任何数据 | 服务器上还没有该设备的备份，请先上传一次 |
+| `.server(code, msg)` | 其它非零 code 的兜底（1001/1002/1003/2001/5000） | 服务端错误（\(code)）：\(msg) |
 
 上层统一 catch → `message = "上传失败/恢复失败/导出失败：\(error.localizedDescription)"`
 

@@ -12,6 +12,7 @@
 - 颜色标签（`blue / green / orange`）驱动左侧竖条颜色
 - 全天 vs 指定时刻两种事件形态
 - 与主页待办聚合的数据契约（提供 `startDate / isCompleted / isAllDay`）
+- **每天首次进入日程页时清理已过期日程**（`startDate < 今天 0 点`，物理删除；UserDefaults `schedule.lastCleanupDay` 做当日幂等）
 
 不覆盖：
 
@@ -165,6 +166,24 @@ SwiftData `@Model`，一次日程一行。关键字段：
 2. Form 收集 title / remark / startDate / isAllDay / colorTag
 3. 保存：`ScheduleEvent(...)` → `context.insert(e)` → `context.save()` → `dismiss()`
 4. SwiftData `@Query` 自动感知，日/月视图立即刷新
+
+### 每日过期清理
+
+**代码入口：** `ScheduleView.swift` · `cleanupExpiredIfNeeded()`，在页面根视图 `.task` 中调用。
+
+**业务规则：**
+
+- 触发时机：每次 `ScheduleView` 出现时执行；用 UserDefaults key `schedule.lastCleanupDay` 记录"上次清理时的当日 `startOfDay` 时间戳"，与今天一致则直接返回，因此**每天只清一次**
+- 删除口径：`startDate < 今天 0 点` 的全部日程（包含已完成 / 未完成、全天 / 定时），物理删除，不保留历史
+- 副作用：`@Query` 自动感知；月视图"当月日程列表"里对应的已过期条目会一并消失，属预期行为
+
+**实现逻辑：**
+
+1. 取 `todayStart = Calendar.current.startOfDay(for: Date())` 与其 `timeIntervalSince1970` 做当日锚
+2. 读 `UserDefaults.standard.double(forKey: "schedule.lastCleanupDay")`，等值即跳过
+3. `FetchDescriptor<ScheduleEvent>(predicate: #Predicate { $0.startDate < cutoff })` 取过期集合
+4. 依次 `context.delete(e)` → `context.save()`
+5. 写回 UserDefaults 锚点
 
 ### 事件回流到主页
 

@@ -77,12 +77,10 @@ struct MineView: View {
             row(icon: "lock", label: "应用锁",
                 value: setting?.appLockMethod == "faceID" ? "面容ID" : "已开启") { }
             Divider().padding(.leading, 44)
-            row(icon: "square.and.arrow.up", label: "数据备份",
+            // 备份 / 恢复合并为一个入口：LocalBackupSheet 内部同时提供「导出到文件」和
+            // 「从文件恢复」两个 Section，用户不会混淆。value 显示上次备份时间。
+            row(icon: "externaldrive", label: "数据备份 / 恢复",
                 value: setting?.lastBackupAt.map { fmt($0) } ?? "从未") {
-                showBackupSheet = true
-            }
-            Divider().padding(.leading, 44)
-            row(icon: "arrow.counterclockwise", label: "数据恢复", value: "") {
                 showBackupSheet = true
             }
             Divider().padding(.leading, 44)

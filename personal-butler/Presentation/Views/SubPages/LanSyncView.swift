@@ -77,27 +77,37 @@ struct LanSyncView: View {
     }
 
     private func doUpload() async {
-        guard await LocalAuthService.authenticate(reason: "上传备份到局域网服务器") else { return }
+        // 提前 flip running：Face ID 期间也算"忙"，防止用户在生物识别弹窗上再点一次按钮。
+        // 服务端有 TryLock 兜底（code=2003），此处是 UI 层第一道防线。
+        guard !running else { return }
         running = true; defer { running = false }
+        guard await LocalAuthService.authenticate(reason: "上传备份到局域网服务器") else { return }
         let uc = BackupSyncUseCase(context: context)
         do {
             try await uc.upload()
             env.markSynced()
             message = "上传成功"
+        } catch BackupSyncUseCase.SyncError.inProgress {
+            message = "上一次同步还在进行，请稍后重试"
         } catch {
             message = "上传失败：\(error.localizedDescription)"
         }
     }
 
     private func doDownload() async {
-        guard await LocalAuthService.authenticate(reason: "从局域网服务器恢复数据") else { return }
+        guard !running else { return }
         running = true; defer { running = false }
+        guard await LocalAuthService.authenticate(reason: "从局域网服务器恢复数据") else { return }
         let uc = BackupSyncUseCase(context: context)
         do {
             let payload = try await uc.download()
             try uc.restore(payload)
             env.markSynced()
             message = "恢复成功"
+        } catch BackupSyncUseCase.SyncError.inProgress {
+            message = "上一次同步还在进行，请稍后重试"
+        } catch BackupSyncUseCase.SyncError.noBackup {
+            message = "服务器上还没有该设备的备份，请先上传一次"
         } catch {
             message = "恢复失败：\(error.localizedDescription)"
         }

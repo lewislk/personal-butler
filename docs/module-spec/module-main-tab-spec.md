@@ -9,7 +9,7 @@
 - 自定义底部 tab bar（HStack，非系统 `TabView`）
 - 主页 `HomeView`：**今日 / 近期待办聚合**、功能宫格 Top 6、勾选完成
 - 全部应用 `AllAppView`：模块拖拽排序、Top6 分割线提示、跳转子页面
-- 我的 `MineView`：应用锁 / 数据备份 / 数据恢复 / 局域网同步 / 清除缓存 / 版本信息 入口
+- 我的 `MineView`：应用锁 / 数据备份 · 恢复 / 局域网同步 / 清除缓存 / 版本信息 入口
 - 每 Tab 首次进入时保证种子数据已注入（通过 `MainTabView.task`）
 
 不覆盖：
@@ -147,7 +147,7 @@
 **业务规则：**
 
 - **应用锁**：只读展示 `setting?.appLockMethod == "faceID"` → "面容ID"；MVP 不提供切换逻辑
-- **数据备份 / 数据恢复**：均触发 `showBackupSheet = true`，弹出 `LocalBackupSheet`（当前 MVP 只有"导出"能力，"恢复"入口点击行为同样是打开该弹窗）
+- **数据备份 / 恢复**：单一入口，触发 `showBackupSheet = true` 弹出 `LocalBackupSheet`；sheet 内部同时提供「导出到文件」与「从文件恢复」两个 Section
 - **局域网同步**：触发 `showSyncSheet = true`，弹出 `LanSyncView`
 - **清除缓存**：直接把 `cacheSize` 置 "0 KB" 并 toast「已清除」；未真正扫描/删除文件（MVP）
 - **版本信息**：硬编码 `"v1.0.0"`

@@ -19,7 +19,7 @@ iOS 18+ SwiftUI 单端 App，纯本地（SwiftData + Keychain）个人生活管�
 | iOS 最低版本 | 18（可用 iOS 18 新 API，不必写 `if #available` 兜底） |
 | UI 框架 | 纯 SwiftUI；**禁止**引入 UIKit（除系统集成必需，如 `UIPasteboard`） |
 | 架构 | Clean Architecture 名义上分层，实际 MVP 阶段简单页面直连 `ModelContext`；只有跨模块聚合的备份同步被抽为 UseCase |
-| 依赖 | **零第三方包**（无 SPM / Cocoapods），全部走系统原生 API |
+| 依赖 | 使用SPM（Swift Package Manager）管理依赖包 |
 | 存储 | 非敏感 → SwiftData（`@Model`，底层 SQLite）；敏感（密码明文 / 2FA 密钥）→ Keychain；轻配置 → UserDefaults |
 | 网络 | 只允许 `URLSession` 访问局域网 `http://<host>:8090/sync/*`；**禁止**任何外网请求 / 埋点 / 分析 SDK |
 | 加密 | CryptoKit（HMAC-SHA1 for TOTP）；不引入自签 HTTPS / AES 需求（PRD 二期） |
@@ -158,8 +158,7 @@ LAN HTTP (仅用户手动触发)  ←── BackupSyncUseCase.upload / download
 
 | 现象 | 状态 | 何处 |
 |------|------|------|
-| `BackupSyncUseCase.restore(_:)` 拿到 payload 后不实际覆盖本地数据，只 `context.save()` | **故意占位**，避免开发期误删 | `Domain/UseCases/BackupSyncUseCase.swift` |
-| `/sync/info` / `/sync/clear` 客户端未实现 | MVP 未做 | 同上 |
+| `/sync/info` / `/sync/clear` 客户端未实现 | MVP 未做 | `LanSyncView` / `BackupSyncUseCase` |
 | 日程 / 纪念日的推送提醒未注册（`NotificationManager` 能力就绪） | MVP 未接入 | `SubPages/ScheduleView.swift` / `AnniversaryView.swift` |
 | MineView "清除缓存" 只把 `cacheSize` 置 0，不真删文件 | MVP 占位 | `MainTab/MineView.swift` |
 | `LocalAuthService` 模拟器直接返回 true | **开发兜底**，勿改 | `Core/Auth/LocalAuthService.swift` |
@@ -181,7 +180,7 @@ LAN HTTP (仅用户手动触发)  ←── BackupSyncUseCase.upload / download
 - 顶层 JSON：`{ syncMeta: {...}, data: {...} }`；见 `Data/Mapper/SyncPayload.swift`
 - 4 个端点：`POST /sync/upload` / `GET /sync/download` / `GET /sync/info` / `DELETE /sync/clear`
 - 统一返回结构：`{ code: Int, msg: String, data: T? }`
-- 错误码：0 成功 / 1001 头缺失 / 1002 密钥错 / 1003 JSON 解析失败 / 2001 存储失败 / 2002 无备份 / 5000 内部异常
+- 错误码：0 成功 / 1001 头缺失 / 1002 密钥错 / 1003 JSON 解析失败 / 2001 存储失败 / 2002 无备份 / 2003 同一设备写请求并发中（服务端 TryLock 拒绝） / 5000 内部异常
 
 **破坏性变更规则**：
 

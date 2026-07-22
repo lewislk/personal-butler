@@ -16,6 +16,10 @@ struct ScheduleView: View {
     /// 当前处于展开态（已左滑露出删除按钮）的日程 id；同一时刻最多一个
     @State private var openSwipeId: UUID?
 
+    /// UserDefaults key：记录"上一次清理过期日程"的当日 startOfDay 时间戳；
+    /// 值与今天不一致时视为"今天第一次打开"，触发清理一次。
+    private static let lastCleanupKey = "schedule.lastCleanupDay"
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
@@ -47,6 +51,7 @@ struct ScheduleView: View {
         }
         .navigationTitle("日程管理")
         .navigationBarTitleDisplayMode(.inline)
+        .task { cleanupExpiredIfNeeded() }
         .sheet(isPresented: $showCreate) {
             EditScheduleSheet(event: nil)
         }
@@ -68,6 +73,27 @@ struct ScheduleView: View {
         } message: {
             Text(pendingDelete.map { "「\($0.title)」删除后不可恢复。" } ?? "")
         }
+    }
+
+    // MARK: - 过期清理
+    /// 每天第一次打开日程页时调用一次：删除 startDate 早于今天 0 点的日程。
+    /// 用 UserDefaults 记录"上一次清理的当日 startOfDay 时间戳"做幂等；同一天多次进入只清一次。
+    private func cleanupExpiredIfNeeded() {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        let todayKey = todayStart.timeIntervalSince1970
+        let lastKey = UserDefaults.standard.double(forKey: Self.lastCleanupKey)
+        guard lastKey != todayKey else { return }
+
+        let cutoff = todayStart
+        let descriptor = FetchDescriptor<ScheduleEvent>(
+            predicate: #Predicate { $0.startDate < cutoff }
+        )
+        if let expired = try? context.fetch(descriptor), !expired.isEmpty {
+            for e in expired { context.delete(e) }
+            try? context.save()
+        }
+        UserDefaults.standard.set(todayKey, forKey: Self.lastCleanupKey)
     }
 
     // MARK: - 日视图

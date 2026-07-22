@@ -25,7 +25,6 @@
 易混边界：
 
 - **本地推送提醒**：由 `Core/Utils/NotificationManager` 提供能力，但当前业务模块（Schedule/Anniversary）暂未强制接入定时注册，属于 P1 待完善项
-- **数据恢复**：当前 `BackupSyncUseCase.restore(_:)` 为 MVP 骨架（不实际覆盖本地数据，避免误删），后续升级
 - **AppModule.comingSoon = true 的模块**（记账本 / 健康记录 / 旅行清单 / 观影记录）：仅在「全部应用」列表展示，点击进入统一走 `ComingSoonView` 占位
 
 ## 2. 业务域调用关系
