@@ -279,13 +279,21 @@ struct EditAnniversarySheet: View {
             .scrollDismissesKeyboard(.immediately)
             .sheet(isPresented: $isDatePickerExpanded) {
                 NavigationStack {
-                    ScrollView {
-                        DatePicker("", selection: $date, displayedComponents: [.date])
-                            .datePickerStyle(.graphical)
-                            .environment(\.locale, Locale(identifier: "zh_CN"))
-                            .labelsHidden()
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
+                    Group {
+                        if isLunar {
+                            // 农历：三滚轮（年 / 月 / 日），月份用"一月/二月..."中文
+                            LunarWheelPicker(date: $date)
+                        } else {
+                            // 阳历：保留系统 graphical 日历
+                            ScrollView {
+                                DatePicker("", selection: $date, displayedComponents: [.date])
+                                    .datePickerStyle(.graphical)
+                                    .environment(\.locale, Locale(identifier: "zh_CN"))
+                                    .labelsHidden()
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 8)
+                            }
+                        }
                     }
                     .navigationTitle("选择日期")
                     .navigationBarTitleDisplayMode(.inline)
@@ -297,10 +305,11 @@ struct EditAnniversarySheet: View {
                 }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
-                // 打开时记住基准年月，只有在"年月未变、日发生变化"时才判定为点选了具体日期。
-                // 若比较 date 整体，切换年份/月份也会触发关闭。
+                // 阳历：打开时记住基准年月，只有在"年月未变、日发生变化"时才判定为点选了具体日期。
+                // 农历模式下走滚轮 + "完成"按钮关闭，onChange 逻辑对农历无影响（只会不断刷新 anchor）。
                 .onAppear { pickerAnchor = date }
                 .onChange(of: date) { _, new in
+                    guard !isLunar else { pickerAnchor = new; return }
                     let cal = Calendar.current
                     let anchor = cal.dateComponents([.year, .month, .day], from: pickerAnchor)
                     let now = cal.dateComponents([.year, .month, .day], from: new)
@@ -427,4 +436,141 @@ private struct EmojiPickerRow: View {
         // 兜底：非 Emoji 也允许（例如 "生"），保留旧行为
         return s.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1).description
     }
+}
+
+// MARK: - 农历三滚轮选择器（年 数字 / 月 中文 / 日 数字）
+/// 阳历分支复用系统 `.graphical DatePicker`；农历分支单独走这里，
+/// 因为系统日历不提供中式农历月/日的可视选择。
+///
+/// 内部把 (公历年，农历月，农历日) 三元组通过 `Calendar(.chinese)` 反算成 Date：
+/// 用当年 6 月 1 日探针取到对应的 chinese era/year，再拼上用户选的月、日。
+/// 由于纪念日按农历重复只关心月+日（见 `DateCalculator.daysUntilNextYearly`），
+/// 年份取哪一个 chinese 年只影响初始化和显示，不影响业务语义。
+/// 简化：忽略闰月（业务侧当前也未区分闰月）。
+private struct LunarWheelPicker: View {
+    @Binding var date: Date
+
+    private let chineseCal: Calendar = {
+        var c = Calendar(identifier: .chinese)
+        c.locale = Locale(identifier: "zh_CN")
+        return c
+    }()
+    private let gregCal = Calendar(identifier: .gregorian)
+
+    /// 公历年做展示（用户熟悉的年份数字），实际写回 Date 时再换算到 chinese 年
+    @State private var year: Int = 2026
+    /// 农历月 1...12（不支持闰月）
+    @State private var monthIdx: Int = 1
+    /// 农历日 1...(29 或 30)
+    @State private var day: Int = 1
+
+    private static let monthNames = [
+        "一月","二月","三月","四月","五月","六月",
+        "七月","八月","九月","十月","十一月","十二月"
+    ]
+    private var years: [Int] { Array(1950...2100) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Picker("", selection: $year) {
+                    ForEach(years, id: \.self) { y in
+                        Text("\(String(y)) 年").tag(y)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .frame(maxWidth: .infinity)
+                .clipped()
+
+                Picker("", selection: $monthIdx) {
+                    ForEach(1...12, id: \.self) { m in
+                        Text(Self.monthNames[m - 1]).tag(m)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .frame(maxWidth: .infinity)
+                .clipped()
+
+                Picker("", selection: $day) {
+                    ForEach(1...daysInSelectedLunarMonth, id: \.self) { d in
+                        Text("\(d) 日").tag(d)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .frame(maxWidth: .infinity)
+                .clipped()
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+
+            // 底部实时回显农历字符串，让用户明确当前选项对应哪一天
+            Text(DateCalculator.lunarString(from: date))
+                .font(.system(size: 13))
+                .foregroundStyle(AppColorTheme.textSub)
+                .padding(.top, 8)
+
+            Spacer()
+        }
+        .onAppear {
+            year = gregCal.component(.year, from: date)
+            monthIdx = clampedMonth(chineseCal.component(.month, from: date))
+            day = clampedDay(chineseCal.component(.day, from: date))
+        }
+        .onChange(of: year) { _, _ in syncDate() }
+        .onChange(of: monthIdx) { _, _ in
+            day = min(day, daysInSelectedLunarMonth)
+            syncDate()
+        }
+        .onChange(of: day) { _, _ in syncDate() }
+    }
+
+    /// 依据当前 year + monthIdx 选择，返回该农历月的总天数（29 或 30；越界给 30 兜底）
+    private var daysInSelectedLunarMonth: Int {
+        var comps = DateComponents()
+        if let era = currentChineseEraYear() {
+            comps.era = era.era
+            comps.year = era.year
+        }
+        comps.month = monthIdx
+        comps.day = 1
+        if let d = chineseCal.date(from: comps),
+           let range = chineseCal.range(of: .day, in: .month, for: d) {
+            return range.count
+        }
+        return 30
+    }
+
+    /// 通过当年 6 月 1 日的公历日期，反查到对应的 chinese era + year
+    private func currentChineseEraYear() -> (era: Int, year: Int)? {
+        var probe = DateComponents()
+        probe.year = year; probe.month = 6; probe.day = 1
+        guard let g = gregCal.date(from: probe) else { return nil }
+        let c = chineseCal.dateComponents([.era, .year], from: g)
+        guard let e = c.era, let y = c.year else { return nil }
+        return (e, y)
+    }
+
+    private func syncDate() {
+        guard let ey = currentChineseEraYear() else { return }
+        var comps = DateComponents()
+        comps.era = ey.era
+        comps.year = ey.year
+        comps.month = monthIdx
+        comps.day = min(day, daysInSelectedLunarMonth)
+        if let d = chineseCal.date(from: comps) {
+            // 保留原 Date 的时分秒，避免 lunarString 之外的时间字段错乱
+            var hms = gregCal.dateComponents([.hour, .minute, .second], from: date)
+            hms.year = gregCal.component(.year, from: d)
+            hms.month = gregCal.component(.month, from: d)
+            hms.day = gregCal.component(.day, from: d)
+            if let merged = gregCal.date(from: hms) {
+                date = merged
+            } else {
+                date = d
+            }
+        }
+    }
+
+    private func clampedMonth(_ m: Int) -> Int { min(12, max(1, m)) }
+    private func clampedDay(_ d: Int) -> Int { min(30, max(1, d)) }
 }

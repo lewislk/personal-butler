@@ -34,16 +34,19 @@ enum DateCalculator {
 
     /// 格式化中文农历
     static func lunarString(from date: Date) -> String {
+        // 年份用公历数字（用户直观熟悉），月/日用农历中文；chinese 日历的 `y`
+        // 会输出 1~60 的循环年号，不适合直接展示。
+        let year = Calendar(identifier: .gregorian).component(.year, from: date)
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
         f.calendar = Calendar(identifier: .chinese)
         f.dateFormat = "MMMMd日"
-        return "农历 · " + f.string(from: date)
+        return "农历 · \(year)年" + f.string(from: date)
     }
 
     static func gregorianDateLabel(_ date: Date) -> String {
         let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "M月d日"
+        f.dateFormat = "yyyy年M月d日"
         return "公历 · " + f.string(from: date)
     }
 
