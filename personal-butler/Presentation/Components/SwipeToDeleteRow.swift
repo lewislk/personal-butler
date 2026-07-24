@@ -98,7 +98,11 @@ struct SwipeToDeleteRow<Content: View>: View {
                         onTap()
                     }
                 }
-                .gesture(
+                // 用 simultaneousGesture 而非 .gesture：
+                // .gesture 会独占手势，导致外层 ScrollView 的纵向滚动被拦截
+                // （即便在垂直方向早退，SwiftUI 也已把手势判给了本行）；
+                // simultaneous 允许纵向 pan 继续冒泡给 ScrollView，同时保留横向左滑识别。
+                .simultaneousGesture(
                     DragGesture(minimumDistance: 8)
                         .onChanged { value in
                             // 首次进入 onChanged 时判定方向；判定为纵向就整段忽略

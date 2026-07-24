@@ -18,32 +18,36 @@ struct AnniversaryView: View {
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            ScrollView {
-                VStack(spacing: 0) {
-                    if let closest = closestYearly {
-                        heroCard(closest)
-                    }
-                    SegmentedPill(items: [(AnniversaryType.yearly, "每年重复"),
-                                          (AnniversaryType.cumulative, "累计天数")],
-                                  selection: $mode)
-                        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
-
-                    ForEach(filtered, id: \.id) { a in
-                        anniRow(a)
-                        Divider().padding(.horizontal, 16)
-                    }
-                    Spacer(minLength: 80)
+            // 顶部 hero + 分段 pill 固定不滚，只有下方数据行本身可上下滑动
+            VStack(spacing: 0) {
+                if let closest = closestYearly {
+                    heroCard(closest)
                 }
+                SegmentedPill(items: [(AnniversaryType.yearly, "每年重复"),
+                                      (AnniversaryType.cumulative, "累计天数")],
+                              selection: $mode)
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
+
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filtered, id: \.id) { a in
+                            anniRow(a)
+                            Divider().padding(.horizontal, 16)
+                        }
+                        // FAB = 52pt 高 + 24pt 底部 padding = 76pt，再留 ~44pt 净空避免遮挡末行
+                        Spacer(minLength: 120)
+                    }
+                }
+                // 点击列表空白区收起已展开的滑动行
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        if openSwipeId != nil {
+                            openSwipeId = nil
+                        }
+                    }
+                )
             }
             .background(Color.white)
-            // 点击任何空白区收起已展开的滑动行
-            .simultaneousGesture(
-                TapGesture().onEnded {
-                    if openSwipeId != nil {
-                        openSwipeId = nil
-                    }
-                }
-            )
             // 切类型时也顺手收起
             .onChange(of: mode) { _, _ in openSwipeId = nil }
 
