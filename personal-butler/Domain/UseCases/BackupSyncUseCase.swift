@@ -161,12 +161,12 @@ final class BackupSyncUseCase {
     /// data 无意义（upload / clear）时用这个占位。
     private struct Empty: Decodable {}
 
-    private func makeRequest(path: String, method: String) throws -> URLRequest {
+    private func makeRequest(path: String, method: String, timeout: TimeInterval = 25) throws -> URLRequest {
         guard !AppSyncConfig.host.isEmpty else { throw SyncError.serverEmpty }
         let url = URL(string: "http://\(AppSyncConfig.host):\(AppSyncConfig.defaultPort)\(path)")!
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.timeoutInterval = 25
+        req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(AppSyncConfig.deviceID, forHTTPHeaderField: "X-Device-ID")
         req.setValue(AppSyncConfig.token, forHTTPHeaderField: "X-Sync-Token")
@@ -191,17 +191,77 @@ final class BackupSyncUseCase {
         }
     }
 
-    func upload() async throws {
+    /// 上传完整 SyncPayload 到服务端。
+    ///
+    /// **图片体积评估**：每张 512px JPEG 0.7 ≈ 30-60KB，base64 后膨胀 33%。
+    /// 几十张美食 / 菜谱图片很容易让 payload 上到几 MB；25s 默认超时在弱
+    /// WiFi 信号下不够稳，这里固定 180s 给传输留足余量。
+    ///
+    /// **进度回调**：`progress` 在主线程之外的 URLSession delegate 队列触发，
+    /// 调用方应自行切回主线程更新 UI（用 `Task { @MainActor in ... }` 即可）。
+    /// 不传 progress 时退化为 fire-and-forget 的等价语义。
+    ///
+    /// **不破坏同步契约**：URL / Header / Body 格式都不变，仅传输方式
+    /// 从 `URLSession.data(for:)` 换成 `URLSession.upload(for:from:delegate:)`，
+    /// 服务端无感知。
+    func upload(progress: (@Sendable (Double) -> Void)? = nil) async throws {
         let payload = try buildPayload()
-        var req = try makeRequest(path: "/sync/upload", method: "POST")
-        req.httpBody = try JSONEncoder().encode(payload)
-        let (data, _) = try await URLSession.shared.data(for: req)
+        let body = try JSONEncoder().encode(payload)
+        var req = try makeRequest(path: "/sync/upload", method: "POST", timeout: 180)
+        // 显式带 Content-Length：部分服务端 / 反代（如 nginx）需要它来识别请求体，
+        // URLSession.upload(for:from:) 会自动设置，这里只是双保险。
+        req.setValue("\(body.count)", forHTTPHeaderField: "Content-Length")
+        let delegate = ProgressDelegate(onProgress: progress)
+        let (data, _) = try await URLSession.shared.upload(for: req, from: body, delegate: delegate)
         _ = try decodeResponse(data, as: Empty.self)
     }
 
-    func download() async throws -> SyncPayload {
-        let req = try makeRequest(path: "/sync/download", method: "GET")
-        let (data, _) = try await URLSession.shared.data(for: req)
+    /// 通用进度 delegate：同时覆盖上传（didSendBodyData）和下载（didReceiveData / didFinishCollecting）。
+    ///
+    /// 用 NSObject 子类而非 actor，是因为 URLSession delegate 协议要求 Objective-C 兼容类型。
+    ///
+    /// **下载进度注意事项**：
+    /// - `didReceiveData` 是 URLSessionDataDelegate 的方法，仅当响应带 `Content-Length` 时
+    ///   `totalBytesExpectedToReceive` 才 > 0；服务端默认 JSON 响应 Gin 会自动设置 Content-Length，
+    ///   所以本场景能正常拿到 fraction。
+    /// - 若服务端开了 chunked transfer encoding（gzip / stream），totalBytesExpectedToReceive
+    ///   会是 -1，fraction 计算会被 `guard` 跳过，UI 退化为"恢复中…"无百分比状态（不会崩）。
+    private final class ProgressDelegate: NSObject, URLSessionDataDelegate {
+        let onProgress: (@Sendable (Double) -> Void)?
+
+        init(onProgress: (@Sendable (Double) -> Void)?) {
+            self.onProgress = onProgress
+        }
+
+        // 上传：URLSessionTaskDelegate
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        didSendBodyData bytesSent: Int64,
+                        totalBytesSent: Int64,
+                        totalBytesExpectedToSend: Int64) {
+            guard totalBytesExpectedToSend > 0, let onProgress else { return }
+            let fraction = Double(totalBytesSent) / Double(totalBytesExpectedToSend)
+            onProgress(min(max(fraction, 0), 1))
+        }
+
+        // 下载：URLSessionDataDelegate
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                        didReceive data: Data) {
+            // 用 task.countOfBytesReceived + task.countOfBytesExpectedToReceive 而不是
+            // 累加 data.count，避免和系统内部缓冲计数冲突。
+            let received = max(dataTask.countOfBytesReceived, 0)
+            let expected = dataTask.countOfBytesExpectedToReceive
+            guard expected > 0, let onProgress else { return }
+            let fraction = Double(received) / Double(expected)
+            onProgress(min(max(fraction, 0), 1))
+        }
+    }
+
+    func download(progress: (@Sendable (Double) -> Void)? = nil) async throws -> SyncPayload {
+        // 与 upload 同步：图片 base64 嵌入 JSON 后体积同样会上到几 MB。
+        // 25s 在弱 WiFi / 蜂窝热点下不够稳，提到 180s 与 upload 对齐。
+        let req = try makeRequest(path: "/sync/download", method: "GET", timeout: 180)
+        let delegate = ProgressDelegate(onProgress: progress)
+        let (data, _) = try await URLSession.shared.data(for: req, delegate: delegate)
         let wrap = try decodeResponse(data, as: SyncPayload.self)
         guard let payload = wrap.data else { throw SyncError.decode }
         return payload

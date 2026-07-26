@@ -13,13 +13,158 @@ server/
 │   ├── model/                      ← 表结构（(device_id, id) 复合主键）
 │   ├── dto/                        ← 与 iOS SyncPayload 对齐的 JSON DTO
 │   ├── middleware/                 ← X-Device-ID / X-Sync-Token 校验
-│   ├── service/                    ← 业务：Upload/Download/Info/Clear
-│   └── handler/                    ← Gin 路由
+│   ├── service/                    ← 业务：Upload/Download/Info/Clear + Recipe CRUD
+│   ├── handler/                    ← Gin 路由
+│   └── web/                        ← 嵌入式 HTML/CSS/JS（embed.FS）
 ├── sql/init.sql                    ← MySQL 建库 & 建表
+├── Dockerfile                      ← 多阶段构建（builder + distroless runtime）
+├── docker-compose.yml              ← 一键编排 mysql + server
+├── deploy.sh                       ← 远程一键部署脚本（rsync + ssh）
+├── .env.example                    ← 环境变量样例
 └── go.mod
 ```
 
-## 快速开始
+## 快速开始（Docker，推荐）
+
+最快上手路径，无需在宿主机安装 Go / MySQL：
+
+```bash
+cd server
+cp .env.example .env
+# 修改 .env 中的 SYNC_TOKEN / MYSQL_ROOT_PASSWORD
+docker compose up -d --build
+```
+
+启动完成后：
+
+- API：`http://<host>:8090/sync/*` 与 `http://<host>:8090/api/*`
+- Web 表单：`http://<host>:8090/web`
+- 健康检查：`http://<host>:8090/healthz`
+
+常用维护命令：
+
+```bash
+docker compose logs -f server          # 查日志
+docker compose restart server         # 重启服务端（不动 mysql）
+docker compose down                   # 停止并清理容器（保留数据卷）
+docker compose down -v                # 连数据卷一起清掉（⚠️ 会丢数据，谨慎使用）
+docker compose up -d --build server   # 仅重 build + 重启 server
+```
+
+> 首次启动会自动执行 `sql/init.sql` 建库建表；只要 `mysql_data` 卷还在，后续重启不会重复执行。
+
+## 远程一键部署
+
+`deploy.sh` 用 `rsync + ssh` 把 `server/` 同步到远程机器，再调用 `docker compose up -d --build` 拉起服务。本地（macOS）执行即可，无需在远程手动操作。
+
+### 远程机器一次性准备（仅首次）
+
+**1. 安装 Docker + Compose 插件**
+
+```bash
+# Ubuntu/Debian（远程机器上执行）
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER       # 让当前用户免 sudo 用 docker
+newgrp docker                        # 立即生效，或重新 ssh 登录
+```
+
+CentOS / RHEL 用同一条 `curl -fsSL https://get.docker.com | sh` 即可。
+
+**2. 开放 8090 端口（如启用了 ufw / firewalld）**
+
+```bash
+# Ubuntu (ufw)
+sudo ufw allow 8090/tcp
+
+# CentOS (firewalld)
+sudo firewall-cmd --permanent --add-port=8090/tcp && sudo firewall-cmd --reload
+```
+
+云服务器（阿里云 / 腾讯云 / AWS 等）还需在**安全组**里放行 8090 入站。
+
+**3. 配置免密 SSH 登录（强烈推荐）**
+
+在本地执行：
+
+```bash
+ssh-copy-id -p <端口> <user>@<host>
+# 验证：ssh -p <端口> <user>@<host> 'docker version'  应该不需要密码且能看到 docker 版本
+```
+
+### 一键部署
+
+在本地仓库 `server/` 目录下执行：
+
+```bash
+# 首次部署：自动生成随机 SYNC_TOKEN / MYSQL_ROOT_PASSWORD 并写入远程 .env
+./deploy.sh root@192.168.1.10 --init
+
+# 后续更新代码：复用远程 .env，只 rebuild server 镜像
+./deploy.sh root@192.168.1.10
+```
+
+可选环境变量：
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `SSH_PORT` | `22` | SSH 端口 |
+| `REMOTE_DIR` | `~/personal-butler` | 远程部署目录 |
+| `PB_SYNC_TOKEN` | 随机 16 字节 hex | 仅 `--init` 时生效，自定义 token |
+| `PB_MYSQL_PASSWORD` | 随机 16 字节 hex | 仅 `--init` 时生效，自定义 MySQL 密码 |
+| `PB_SERVER_PORT` | `8090` | 仅 `--init` 时写入 .env，影响端口映射 |
+
+示例：
+
+```bash
+# 自定义 SSH 端口
+SSH_PORT=2222 ./deploy.sh deploy@host.example.com --init
+
+# 自定义远程目录
+REMOTE_DIR=/opt/personal-butler ./deploy.sh root@host
+
+# 指定 token（避免随机生成）
+PB_SYNC_TOKEN=my-secret-xxx ./deploy.sh root@host --init
+```
+
+部署成功后脚本会输出访问地址、iOS 同步地址、Web 表单地址；`--init` 模式还会在控制台打印一次随机生成的凭据（**仅展示一次，请妥善保存**）。
+
+### 脚本工作流
+
+1. **本地自检**：rsync / ssh 可用
+2. **远程自检**：docker / docker compose 已安装
+3. **创建远程目录**：`mkdir -p $REMOTE_DIR`
+4. **rsync 同步源码**：`server/* → 远程`（排除 `.env` / 本地构建产物 / `.git` / IDE 文件 / `deploy.sh` 自身）
+5. **生成 .env**（仅 `--init` 且远程不存在）：写入随机 `SYNC_TOKEN` / `MYSQL_ROOT_PASSWORD`
+6. **远程构建并启动**：`docker compose up -d --build --remove-orphans`
+7. **等待健康检查**：轮询 `http://127.0.0.1:8090/healthz`，30s 超时
+8. **输出访问地址**：尝试取公网 IP，失败回退到内网 IP
+
+### 常见问题
+
+**Q: 部署完访问不了 8090？**
+- 远程云服务器：检查**安全组**是否放行 8090 入站
+- 自建机器：`sudo ufw status` / `sudo firewall-cmd --list-ports` 检查防火墙
+- 容器是否真的起来了：`ssh <host> 'cd ~/personal-butler && docker compose ps'`
+
+**Q: 远程 docker 提示 permission denied？**
+- 当前 SSH 用户不在 docker 组：`sudo usermod -aG docker $USER && newgrp docker`
+- 或重新 ssh 登录一次让组权限生效
+
+**Q: 想换 token / MySQL 密码？**
+- `ssh <host> 'rm ~/personal-butler/.env'`，再 `./deploy.sh <host> --init`
+- 注意：换 MySQL 密码需要清掉 `mysql_data` 卷（会丢数据），生产慎用
+
+**Q: 怎么查日志 / 重启？**
+
+```bash
+ssh <user>@<host>
+cd ~/personal-butler
+docker compose logs -f server       # 实时日志
+docker compose restart server       # 重启 server（不动 mysql）
+docker compose pull && docker compose up -d   # 拉最新 mysql 镜像
+```
+
+## 快速开始（本地源码运行）
 
 ```bash
 # 1. 初始化数据库
@@ -41,6 +186,14 @@ go run ./cmd/server
 | `PORT` | `8090` | HTTP 监听端口（客户端硬编码 8090） |
 | `SYNC_TOKEN` | 空 | 与请求头 `X-Sync-Token` 比对。空表示跳过 token 校验（仅限开发） |
 | `MYSQL_DSN` | `root:root@tcp(127.0.0.1:3306)/personal_butler?...` | GORM DSN |
+
+Docker Compose 额外变量（见 `.env.example`）：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `MYSQL_ROOT_PASSWORD` | `mysql123` | MySQL root 密码；首次启动后改需清卷重建 |
+| `MYSQL_DATABASE` | `personal_butler` | 数据库名（需与 `sql/init.sql` 一致） |
+| `SERVER_PORT` | `8090` | 宿主机暴露端口 |
 
 ## API 契约
 

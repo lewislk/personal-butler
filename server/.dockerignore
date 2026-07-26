@@ -1,0 +1,40 @@
+# PersonalButler server Docker build context
+# 把本地构建产物 / IDE 文件 / 版本控制等过滤掉，加速构建并避免污染镜像
+
+# Go 构建产物
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+personal-butler-server
+/bin/
+/dist/
+
+# 本地 Go 缓存与 vendor（让 builder 自己 go mod download）
+vendor/
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# 版本控制
+.git/
+.gitignore
+
+# 文档（不进镜像）
+*.md
+docs/
+
+# Docker 自身文件不必进构建上下文
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# 本地运行时可能产生的临时文件
+.env
+*.log
