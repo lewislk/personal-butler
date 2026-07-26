@@ -29,6 +29,7 @@ vendor/
 # 文档（不进镜像）
 *.md
 docs/
+sql/
 
 # Docker 自身文件不必进构建上下文
 Dockerfile

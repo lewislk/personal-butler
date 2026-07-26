@@ -26,16 +26,53 @@ server/
 
 ## 快速开始（Docker，推荐）
 
-最快上手路径，无需在宿主机安装 Go / MySQL：
+最快上手路径，无需在宿主机安装 Go / MySQL。支持两种 MySQL 部署模式：
+
+### 模式 A：内置 mysql（默认，首次简单上手）
+
+compose 同时拉起 `server` + `mysql` 两个容器，自动执行 `sql/init.sql` 建库建表。
 
 ```bash
 cd server
-cp .env.example .env
-# 修改 .env 中的 SYNC_TOKEN / MYSQL_ROOT_PASSWORD
+cat > .env <<EOF
+SYNC_TOKEN=changeme
+MYSQL_DSN=root:mysql123@tcp(mysql:3306)/personal_butler?charset=utf8mb4&parseTime=True&loc=Local
+MYSQL_ROOT_PASSWORD=mysql123
+MYSQL_DATABASE=personal_butler
+SERVER_PORT=8090
+COMPOSE_PROFILES=mysql
+EOF
 docker compose up -d --build
 ```
 
-启动完成后：
+`COMPOSE_PROFILES=mysql` 是开关，写入即启用内置 mysql；首次启动 mysql 容器会自动执行挂载的 `sql/init.sql`。
+
+### 模式 B：外置 mysql（用户已自行安装 mysql）
+
+适合已经在 docker / 宿主机上跑着 mysql 的场景。compose 只拉起 `server`，连接外部 mysql。
+
+**前置：在外部 mysql 上执行建表脚本**
+
+```bash
+# 把 sql/init.sql 拷到 mysql 所在机器后执行
+mysql -uroot -p < sql/init.sql
+```
+
+**配置 .env（不要写 `COMPOSE_PROFILES`）**
+
+```bash
+cd server
+cat > .env <<EOF
+SYNC_TOKEN=changeme
+MYSQL_DSN=root:your_pwd@tcp(<mysql-host>:<port>)/personal_butler?charset=utf8mb4&parseTime=True&loc=Local
+SERVER_PORT=8090
+EOF
+docker compose up -d --build
+```
+
+`<mysql-host>` 替换为外部 mysql 的可达地址。如果外部 mysql 也是 docker 容器，需让 server 容器加入同一 docker 网络（修改 `docker-compose.yml` 中的 `networks`）或用宿主机 IP。
+
+### 启动完成后
 
 - API：`http://<host>:8090/sync/*` 与 `http://<host>:8090/api/*`
 - Web 表单：`http://<host>:8090/web`
@@ -51,7 +88,7 @@ docker compose down -v                # 连数据卷一起清掉（⚠️ 会丢
 docker compose up -d --build server   # 仅重 build + 重启 server
 ```
 
-> 首次启动会自动执行 `sql/init.sql` 建库建表；只要 `mysql_data` 卷还在，后续重启不会重复执行。
+> 内置 mysql 模式下，首次启动会自动执行 `sql/init.sql` 建库建表；只要 `mysql_data` 卷还在，后续重启不会重复执行。外置模式需手动执行一次 init.sql。
 
 ## 远程一键部署
 
@@ -129,8 +166,10 @@ Host myserver
 | `SSH_PORT` | 空 | SSH 端口。**留空时走 `~/.ssh/config`**（推荐密钥免密登录）；显式设置才用 `-p` 覆盖 |
 | `REMOTE_DIR` | `~/personal-butler` | 远程部署目录 |
 | `PB_SYNC_TOKEN` | 随机 16 字节 hex | 仅 `--init` 时生效，自定义 token |
-| `PB_MYSQL_PASSWORD` | 随机 16 字节 hex | 仅 `--init` 时生效，自定义 MySQL 密码 |
+| `PB_MYSQL_PASSWORD` | 随机 16 字节 hex | 仅 `--init` 且 `PB_USE_BUILTIN_MYSQL=1` 时生效，自定义内置 MySQL 密码 |
 | `PB_SERVER_PORT` | `8090` | 仅 `--init` 时写入 .env，影响端口映射 |
+| `PB_USE_BUILTIN_MYSQL` | `1` | 仅 `--init` 时生效。`1`=内置 mysql 模式（默认）；`0`=外置 mysql 模式 |
+| `PB_MYSQL_DSN` | 空 | 仅 `--init` 且 `PB_USE_BUILTIN_MYSQL=0` 时**必填**，指向外部 mysql 的完整 DSN |
 
 示例：
 
@@ -146,6 +185,11 @@ REMOTE_DIR=/opt/personal-butler ./deploy.sh root@host
 
 # 指定 token（避免随机生成）
 PB_SYNC_TOKEN=my-secret-xxx ./deploy.sh root@host --init
+
+# 使用外部已安装的 mysql（不再启动内置 mysql 容器）
+PB_USE_BUILTIN_MYSQL=0 \
+PB_MYSQL_DSN='root:pwd@tcp(192.168.1.20:3306)/personal_butler?charset=utf8mb4&parseTime=True&loc=Local' \
+./deploy.sh myserver --init
 ```
 
 部署成功后脚本会输出访问地址、iOS 同步地址、Web 表单地址；`--init` 模式还会在控制台打印一次随机生成的凭据（**仅展示一次，请妥善保存**）。
@@ -207,15 +251,16 @@ go run ./cmd/server
 |------|--------|------|
 | `PORT` | `8090` | HTTP 监听端口（客户端硬编码 8090） |
 | `SYNC_TOKEN` | 空 | 与请求头 `X-Sync-Token` 比对。空表示跳过 token 校验（仅限开发） |
-| `MYSQL_DSN` | `root:root@tcp(127.0.0.1:3306)/personal_butler?...` | GORM DSN |
+| `MYSQL_DSN` | `root:mysql123@tcp(devbox:3306)/personal_butler?...` | GORM DSN。Docker 部署时**必须在 .env 中显式配置**，compose 文件用了 `${MYSQL_DSN:?...}` 强制要求 |
 
-Docker Compose 额外变量（见 `.env.example`）：
+Docker Compose 额外变量（写入 `.env`，由 compose 自动读取）：
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `MYSQL_ROOT_PASSWORD` | `mysql123` | MySQL root 密码；首次启动后改需清卷重建 |
-| `MYSQL_DATABASE` | `personal_butler` | 数据库名（需与 `sql/init.sql` 一致） |
+| `MYSQL_ROOT_PASSWORD` | `mysql123` | 仅内置 mysql 模式用。MySQL root 密码；首次启动后改需清卷重建 |
+| `MYSQL_DATABASE` | `personal_butler` | 仅内置 mysql 模式用。数据库名（需与 `sql/init.sql` 一致） |
 | `SERVER_PORT` | `8090` | 宿主机暴露端口 |
+| `COMPOSE_PROFILES` | 空 | **MySQL 模式开关**。设为 `mysql` 启用内置 mysql 容器；不写则使用外部 mysql |
 
 ## API 契约
 

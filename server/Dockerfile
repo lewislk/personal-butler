@@ -14,6 +14,12 @@ FROM golang:1.22-alpine AS builder
 
 WORKDIR /src
 
+# 国内网络访问 proxy.golang.org / sum.golang.org 经常 i/o timeout
+# 默认走 goproxy.cn；海外构建可通过 --build-arg GOPROXY=https://proxy.golang.org,direct 切回
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
+ENV GOSUMDB=off
+
 # 先拷依赖清单，利用 docker layer cache 加速 rebuild
 COPY go.mod go.sum ./
 RUN go mod download

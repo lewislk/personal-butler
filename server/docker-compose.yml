@@ -1,72 +1,79 @@
 # ============================================================
 # PersonalButler · Sync Server · Docker Compose
 # ============================================================
-# 一键启动：mysql 8 + personal-butler-server
+# 两种部署模式（由 .env 中的 COMPOSE_PROFILES 控制）：
 #
-#   docker compose up -d --build
+#   1) 内置 mysql（默认，首次简单上手）
+#      .env 写入：COMPOSE_PROFILES=mysql
+#      docker compose up -d --build
+#      → 同时拉起 server + mysql，自动执行 sql/init.sql 建库建表
+#
+#   2) 外置 mysql（用户已自行用 docker / 宿主机安装好 mysql）
+#      .env 不写 COMPOSE_PROFILES（或留空）
+#      .env 写入：MYSQL_DSN=root:xxx@tcp(<外部mysql-host>:3306)/personal_butler?...
+#      docker compose up -d --build
+#      → 只拉起 server，连接外部 mysql（需用户自行执行 sql/init.sql 建表）
 #
 # 端口映射：
 #   - 8090 → server（iOS 客户端硬编码端口）
-#   - 3306 → mysql  （可选暴露给宿主机，便于排障；不需要可在 ports 注释）
+#   - 3306 → mysql（仅启用内置 mysql 时映射；不需要可在 ports 注释）
 #
 # 数据持久化：
-#   - mysql_data：DB 文件
+#   - mysql_data：DB 文件（仅启用内置 mysql 时使用）
 #   - 不为 server 挂卷：所有静态资源通过 embed.FS 打进二进制
 #
 # 健康检查：
-#   - mysql healthcheck 用 mysqladmin ping
-#   - server 依赖 mysql healthy 才启动；服务端自身有 /healthz 可被外部探活
+#   - mysql healthcheck 用 mysqladmin ping（仅内置 mysql）
+#   - server 通过 restart: on-failure + db.Open 重试等待 mysql 就绪
 # ============================================================
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: personal-butler-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysql123}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-personal_butler}
-      TZ: Asia/Shanghai
-    # 默认只对 server 容器可见；想从宿主机用 GUI 工具连，取消下面 ports 注释
-    # ports:
-    #   - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      # 首次启动自动执行 init.sql（只在 mysql_data 为空时跑一次）
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-mysql123}"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 10s
-    # MySQL 8 默认 caching_sha2_password，本服务端用 caching_sha2 也 OK；
-    # 这里显式声明 default-authentication-plugin=mysql_native_password
-    # 是为了让一些老 GUI 工具（如 Sequel Pro）能直接连。
-    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-
   server:
     build:
       context: .
       dockerfile: Dockerfile
     image: personal-butler-server:latest
     container_name: personal-butler-server
-    restart: unless-stopped
+    restart: on-failure
     ports:
       - "${SERVER_PORT:-8090}:8090"
     environment:
       PORT: 8090
       SYNC_TOKEN: ${SYNC_TOKEN:-changeme}
-      # 关键：mysql host 是 service name "mysql"，不是 127.0.0.1
-      MYSQL_DSN: "root:${MYSQL_ROOT_PASSWORD:-mysql123}@tcp(mysql:3306)/${MYSQL_DATABASE:-personal_butler}?charset=utf8mb4&parseTime=True&loc=Local"
+      # MYSQL_DSN 完全由 .env 提供，两种模式各自拼接：
+      #   内置 mysql：root:<MYSQL_ROOT_PASSWORD>@tcp(mysql:3306)/<MYSQL_DATABASE>?...
+      #   外置 mysql：用户填入完整 DSN，指向已安装的 mysql 实例
+      MYSQL_DSN: ${MYSQL_DSN:?需要在 .env 中配置 MYSQL_DSN}
       TZ: Asia/Shanghai
-    depends_on:
-      mysql:
-        condition: service_healthy
-    # 说明：distroless 镜像不带 shell / curl / wget，无法在容器内跑 healthcheck 命令。
-    # 服务端已暴露 GET /healthz（main.go），可由宿主机 / 反代做 HTTP 探活。
-    # 如需 docker healthcheck，把 base 镜像换成 alpine + 安装 wget，或给二进制加 --health flag。
+    networks:
+      - dev_net
+
+  mysql:
+    # 仅当 .env 启用 mysql profile 时启动（COMPOSE_PROFILES=mysql）
+    profiles: ["mysql"]
+    image: mysql:8.0
+    container_name: personal-butler-mysql
+    restart: on-failure
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysql123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-personal_butler}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-mysql123}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - dev_net
 
 volumes:
   mysql_data:
-    name: personal-butler-mysql-data
+
+networks:
+  dev_net:
+    external: true
