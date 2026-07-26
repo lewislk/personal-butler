@@ -37,7 +37,9 @@ struct CookRecipeView: View {
                                         GridItem(.flexible(), spacing: 12)],
                               spacing: 12) {
                         ForEach(filtered, id: \.id) { r in
-                            NavigationLink { RecipeDetailView(recipe: r) } label: {
+                            Button {
+                                editingRecipe = r
+                            } label: {
                                 cookCard(r)
                             }
                             .buttonStyle(.plain)
@@ -135,10 +137,6 @@ struct CookRecipeView: View {
                         .background(Circle().fill(AppColorTheme.primary.opacity(0.85)))
                         .padding(6)
                 }
-                .onTapGesture {
-                    editingRecipe = r
-                }
-                .contentShape(Rectangle())
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     Text(r.name).font(.system(size: 14, weight: .semibold))
@@ -226,152 +224,6 @@ struct CookRecipeView: View {
     }
 }
 
-struct RecipeDetailView: View {
-    let recipe: CookRecipe
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    @State private var toastVisible = false
-    @State private var showEdit = false
-    @State private var showDeleteConfirm = false
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                iconArea
-                    .onTapGesture { showEdit = true }
-                    .contentShape(Rectangle())
-
-                HStack(spacing: 8) {
-                    Text(recipe.difficulty.label)
-                        .font(.system(size: 12))
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(Color(hex: 0xEEF3FD)))
-                        .foregroundStyle(AppColorTheme.primary)
-                    Text("\(recipe.minutes) 分钟")
-                        .font(.system(size: 12))
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(AppColorTheme.bg))
-                        .foregroundStyle(AppColorTheme.textSub)
-                }
-
-                if !recipe.ingredients.isEmpty || !recipe.ingredientsLegacyRaw.isEmpty {
-                    section(title: "食材", content: ingredientsText)
-                }
-                if !recipe.steps.isEmpty {
-                    section(title: "步骤", content: recipe.steps)
-                }
-                if !recipe.tips.isEmpty {
-                    section(title: "小贴士", content: recipe.tips)
-                }
-
-                Button {
-                    let cart = CookCart(recipe: recipe, servings: 1)
-                    context.insert(cart)
-                    try? context.save()
-                    withAnimation { toastVisible = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                        withAnimation { toastVisible = false }
-                    }
-                } label: {
-                    Label("加入烹饪车", systemImage: "cart.badge.plus")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity).padding(.vertical, 14)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(AppColorTheme.primary))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 8)
-            }
-            .padding(16)
-        }
-        .background(Color.white)
-        .navigationTitle(recipe.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showEdit = true
-                } label: {
-                    Image(systemName: "pencil")
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    showDeleteConfirm = true
-                } label: {
-                    Image(systemName: "trash")
-                }
-            }
-        }
-        .sheet(isPresented: $showEdit) {
-            CookRecipeEditSheet(recipe: recipe)
-        }
-        .alert("删除菜谱", isPresented: $showDeleteConfirm) {
-            Button("取消", role: .cancel) { }
-            Button("删除", role: .destructive) {
-                context.delete(recipe)
-                try? context.save()
-                dismiss()
-            }
-        } message: {
-            Text("将删除「\(recipe.name)」及其食材清单，无法撤销。")
-        }
-        .overlay(alignment: .bottom) {
-            if toastVisible {
-                Text("已加入烹饪车")
-                    .font(.system(size: 13))
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 20).fill(.black.opacity(0.75)))
-                    .foregroundStyle(.white)
-                    .padding(.bottom, 32)
-                    .transition(.opacity)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var iconArea: some View {
-        ZStack {
-            LinearGradient(colors: [Color(hex: 0xFFE0B2), Color(hex: 0xFFAB6E)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            if let data = recipe.iconImage, let ui = UIImage(data: data) {
-                Image(uiImage: ui)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 180)
-                    .clipped()
-            } else {
-                Text(recipe.emoji).font(.system(size: 72))
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 180)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var ingredientsText: String {
-        if recipe.ingredients.isEmpty {
-            return recipe.ingredientsLegacyRaw
-        }
-        return recipe.ingredients.sorted { $0.order < $1.order }
-            .map { ing in ing.amount.isEmpty ? ing.name : "\(ing.name)  \(ing.amount)" }
-            .joined(separator: "\n")
-    }
-
-    private func section(title: String, content: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 14, weight: .semibold))
-            Text(content).font(.system(size: 13))
-                .foregroundStyle(AppColorTheme.text)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(AppColorTheme.bg))
-    }
-}
-
 struct CookRecipeEditSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -392,6 +244,7 @@ struct CookRecipeEditSheet: View {
     // UI 状态
     @FocusState private var focusedField: CookField?
     @State private var showIconPicker: Bool = false
+    @State private var showDeleteConfirm: Bool = false
 
     private enum CookField: Hashable {
         case name
@@ -523,6 +376,18 @@ struct CookRecipeEditSheet: View {
                         .lineLimit(2...6)
                         .focused($focusedField, equals: .tips)
                 }
+
+                // 6. 删除（仅编辑模式）
+                if recipe != nil {
+                    Section {
+                        Button(role: .destructive) {
+                            focusedField = nil
+                            showDeleteConfirm = true
+                        } label: {
+                            Text("删除菜谱").frame(maxWidth: .infinity)
+                        }
+                    }
+                }
             }
             .navigationTitle(recipe == nil ? "新增菜谱" : "编辑菜谱")
             .navigationBarTitleDisplayMode(.inline)
@@ -542,6 +407,20 @@ struct CookRecipeEditSheet: View {
                                 onConfirm: { newIcon in
                     applyIcon(newIcon)
                 }, emojiCandidates: IconPickerSheet.cookEmoji)
+            }
+            .alert("删除菜谱", isPresented: $showDeleteConfirm) {
+                Button("取消", role: .cancel) { }
+                Button("删除", role: .destructive) {
+                    if let r = recipe {
+                        context.delete(r)
+                        try? context.save()
+                    }
+                    dismiss()
+                }
+            } message: {
+                if let r = recipe {
+                    Text("将删除「\(r.name)」及其食材清单，无法撤销。")
+                }
             }
         }
     }
