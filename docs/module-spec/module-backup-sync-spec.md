@@ -33,10 +33,10 @@ struct SyncPayload: Codable {
 }
 ```
 
-`SyncMeta`：`deviceId / syncTimestamp / appVersion / dataVersion (=3)`
+`SyncMeta`：`deviceId / syncTimestamp / appVersion / dataVersion (=4)`
 
-`SyncData` 内含 9 个列表 + 1 个 setting map：
-- `todoList / scheduleList / anniversaryList / passwordList / otpList / foodRecordList / cookRecipeList / noteList / appModuleList / setting`
+`SyncData` 内含 10 个列表 + 1 个 setting map：
+- `todoList / scheduleList / anniversaryList / passwordList / otpList / foodRecordList / cookRecipeList / cartList / noteList / appModuleList / setting`
 
 每类实体对应一个 `SyncXxxDTO`，与 `@Model` 结构对齐；日期统一 `Double`（unix timestamp），UUID 统一 `String`。
 
@@ -83,8 +83,8 @@ struct SyncPayload: Codable {
 
 **业务规则：**
 
-- `syncMeta`：`deviceId = AppSyncConfig.deviceID`；`syncTimestamp = Int64(unix)`；`appVersion = "1.0.0"`（硬编码）；`dataVersion = 3`（硬编码）
-- 扫描全部 `@Model` 表：`Todo / Schedule / Anniversary / Password / OTP / Food / CookRecipe / Note / AppModule`
+- `syncMeta`：`deviceId = AppSyncConfig.deviceID`；`syncTimestamp = Int64(unix)`；`appVersion = "1.0.0"`（硬编码）；`dataVersion = 4`（硬编码）
+- 扫描全部 `@Model` 表：`Todo / Schedule / Anniversary / Password / OTP / Food / CookRecipe / CookIngredient / CookCart / Note / AppModule`
 - `PasswordAccount / OTPAccount` 需要额外从 Keychain 读明文；读失败以 `""` 兜底不阻断
 - `AppSetting` 当前作为 `setting: [:]` 空 map 占位（MVP 未纳入同步）
 
@@ -251,3 +251,17 @@ struct SyncPayload: Codable {
   - rating: Int → Double（半星评分，Codable 天然兼容老 JSON 整数）
   - iconImageBase64?: String（图片图标，base64 编码的 JPEG bytes）
   - URLRequest.timeoutInterval 由 10s 放宽为 25s（图片显著增大 payload）
+- v4 (2026-07-26): 烹饪管理点菜 / 烹饪车 / 烹饪任务改造
+  - `SyncData.cartList: [SyncCartDTO]?` 新字段（Optional 兼容旧服务端）
+  - `SyncRecipeDTO.ingredients` 类型 `String` → `[SyncIngredientDTO]`（结构化食材）
+  - `SyncRecipeDTO.ingredientsLegacyRaw: String` 新字段（旧多行文本迁移用）
+  - `SyncRecipeDTO.iconImageBase64?: String` 新字段（菜谱图片图标）
+  - `SyncRecipeDTO.tips: String` 新字段（小贴士）
+  - `SyncTodoDTO.taskType?: String` 新字段（none / prep / cook）
+  - `SyncTodoDTO.recipeId?: String` 新字段（cook 任务关联菜谱）
+  - `SyncTodoDTO.expectedIngredients?: [String]` 新字段（prep 任务应有食材清单）
+  - `SyncTodoDTO.checkedIngredients?: [String]` 新字段（prep 任务已勾选食材）
+  - 新增 `SyncIngredientDTO`：`id / name / amount / order`
+  - 新增 `SyncCartDTO`：`id / recipeId / servings / addedAt`
+  - `restore` 用 `recipeMap` 解耦 recipe→cart 重建顺序，避免 cart 引用未建好的 recipe
+  - `clearAllSyncedEntities` 显式补 `CookIngredient` / `CookCart`（与 CookRecipe cascade 互为兜底）

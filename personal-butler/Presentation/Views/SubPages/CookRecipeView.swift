@@ -17,6 +17,7 @@ struct CookRecipeView: View {
     @State private var showCartSheet = false
     @State private var showSubmitConfirm = false
     @State private var toastVisible = false
+    @State private var lastSubmittedCount: Int = 0
 
     private let categories: [(String, CookCategory)] = [
         ("全部菜谱", .all),
@@ -71,7 +72,9 @@ struct CookRecipeView: View {
         .alert("提交烹饪任务", isPresented: $showSubmitConfirm) {
             Button("取消", role: .cancel) { }
             Button("提交") {
+                lastSubmittedCount = cartItems.count
                 try? SubmitCookTaskUseCase().execute(context: context)
+                showCartSheet = false
                 withAnimation { toastVisible = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                     withAnimation { toastVisible = false }
@@ -86,7 +89,7 @@ struct CookRecipeView: View {
         }
         .overlay(alignment: .bottom) {
             if toastVisible {
-                Text("已生成 \(cartItems.count + 1) 条任务")
+                Text("已生成 \(lastSubmittedCount + 1) 条任务")
                     .font(.system(size: 13))
                     .padding(.horizontal, 16).padding(.vertical, 8)
                     .background(RoundedRectangle(cornerRadius: 20).fill(.black.opacity(0.75)))

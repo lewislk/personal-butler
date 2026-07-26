@@ -112,7 +112,8 @@ struct PersonalButlerApp: App {
     /// 旧版 CookRecipe.ingredients 是多行文本 String。
     /// v4 起改为结构化 [CookIngredient] 关系，旧字段保留为 ingredientsLegacyRaw。
     /// 此函数把旧多行文本按行解析为 CookIngredient（整行作为 name，不强行解析数量/单位）。
-    /// 幂等：仅对 ingredients 关系为空且 ingredientsLegacyRaw 非空的 recipe 执行。
+    /// 幂等：仅对 ingredients 关系为空且 ingredientsLegacyRaw 非空的 recipe 执行；
+    /// 迁移成功后清空 ingredientsLegacyRaw，避免下次冷启时把用户已删除的食材"复活"。
     @MainActor
     private func migrateCookIngredients(context: ModelContext) {
         let recipes = (try? context.fetch(FetchDescriptor<CookRecipe>())) ?? []
@@ -126,8 +127,9 @@ struct PersonalButlerApp: App {
                 let ing = CookIngredient(name: trimmed, order: i)
                 ing.recipe = r
                 context.insert(ing)
-                changed = true
             }
+            r.ingredientsLegacyRaw = ""
+            changed = true
         }
         if changed { try? context.save() }
     }
