@@ -33,7 +33,7 @@ struct SyncPayload: Codable {
 }
 ```
 
-`SyncMeta`：`deviceId / syncTimestamp / appVersion / dataVersion (=2)`
+`SyncMeta`：`deviceId / syncTimestamp / appVersion / dataVersion (=3)`
 
 `SyncData` 内含 9 个列表 + 1 个 setting map：
 - `todoList / scheduleList / anniversaryList / passwordList / otpList / foodRecordList / cookRecipeList / noteList / appModuleList / setting`
@@ -247,3 +247,7 @@ struct SyncPayload: Codable {
   - `address?: String`     结构化地址，dataVersion ≥ 2 起
   - `latitude?: Double`    WGS84 纬度，dataVersion ≥ 2 起
   - `longitude?: Double`   WGS84 经度，dataVersion ≥ 2 起
+- v3 (2026-07-26): SyncFoodDTO 追加变更
+  - rating: Int → Double（半星评分，Codable 天然兼容老 JSON 整数）
+  - iconImageBase64?: String（图片图标，base64 编码的 JPEG bytes）
+  - URLRequest.timeoutInterval 由 10s 放宽为 25s（图片显著增大 payload）
