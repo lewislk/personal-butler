@@ -7,6 +7,7 @@ import SwiftUI
 import SwiftData
 import MapKit
 import CoreLocation
+import UIKit
 
 // MARK: - 新增 / 编辑美食记录弹窗
 struct EditFoodSheet: View {
@@ -17,7 +18,8 @@ struct EditFoodSheet: View {
     let record: FoodRecord?
 
     @State private var name: String
-    @State private var emoji: String
+    @State private var icon: FoodIcon
+    @State private var showIconPicker: Bool = false
     @State private var rating: Double
     @State private var category: FoodCategory
     @State private var tags: String
@@ -38,7 +40,11 @@ struct EditFoodSheet: View {
     init(record: FoodRecord?) {
         self.record = record
         _name = State(initialValue: record?.name ?? "")
-        _emoji = State(initialValue: record?.emoji ?? "🍽️")
+        if let data = record?.iconImage {
+            _icon = State(initialValue: .image(data))
+        } else {
+            _icon = State(initialValue: .emoji(record?.emoji ?? "🍽️"))
+        }
         _rating = State(initialValue: record?.rating ?? 4.0)
         _category = State(initialValue: record?.category ?? .chinese)
         _tags = State(initialValue: record?.tagsRaw ?? "")
@@ -51,15 +57,6 @@ struct EditFoodSheet: View {
 
     private var isEditing: Bool { record != nil }
 
-    /// 可选 Emoji 面板：覆盖火锅/奶茶/中餐/日料/咖啡等常见品类，末位保留一个通用兜底
-    private static let emojiOptions: [String] = [
-        "🍽️", "🍜", "🍚", "🍛", "🍲", "🍱",
-        "🍣", "🍤", "🥟", "🍔", "🍕", "🌮",
-        "🥗", "🍖", "🍗", "🥘", "🍢", "🍧",
-        "🍰", "🧁", "🍩", "🍪", "🍦", "🍮",
-        "☕️", "🍵", "🧋", "🥤", "🍺", "🍷"
-    ]
-
     var body: some View {
         NavigationStack {
             Form {
@@ -67,7 +64,21 @@ struct EditFoodSheet: View {
                     TextField("店名 / 菜品", text: $name)
                 }
                 Section("图标") {
-                    emojiPicker
+                    Button {
+                        showIconPicker = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            iconPreview
+                                .frame(width: 60, height: 60)
+                            Text("点击更换")
+                                .font(.system(size: 15))
+                                .foregroundStyle(AppColorTheme.text)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(AppColorTheme.textSub)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
                 Section("评分") {
                     starRating
@@ -77,6 +88,8 @@ struct EditFoodSheet: View {
                         Text("火锅").tag(FoodCategory.hotpot)
                         Text("奶茶").tag(FoodCategory.milktea)
                         Text("中餐").tag(FoodCategory.chinese)
+                        Text("西餐").tag(FoodCategory.western)
+                        Text("大排档").tag(FoodCategory.streetfood)
                         Text("日料").tag(FoodCategory.japanese)
                         Text("咖啡").tag(FoodCategory.coffee)
                     }
@@ -191,6 +204,11 @@ struct EditFoodSheet: View {
                     apply(picked)
                 }
             }
+            .sheet(isPresented: $showIconPicker) {
+                IconPickerSheet(initial: icon) { picked in
+                    icon = picked
+                }
+            }
             .confirmationDialog("修改位置", isPresented: $showChangeActions, titleVisibility: .visible) {
                 Button("搜索地点") {
                     clearLocation()
@@ -284,7 +302,6 @@ struct EditFoodSheet: View {
         let tagList = tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         if let r = record {
             r.name = finalName
-            r.emoji = emoji
             r.rating = rating
             r.tagsRaw = tagList.joined(separator: ",")
             r.remark = remark
@@ -293,68 +310,107 @@ struct EditFoodSheet: View {
             r.address = address
             r.latitude = latitude
             r.longitude = longitude
+            switch icon {
+            case .emoji(let s):
+                r.emoji = s.isEmpty ? "🍽️" : s
+                r.iconImage = nil
+            case .image(let d):
+                // 保留原 emoji 作为兜底显示（图片被清后仍有 fallback）
+                r.iconImage = d
+            }
         } else {
+            let effectiveEmoji: String
+            let effectiveImage: Data?
+            switch icon {
+            case .emoji(let s):
+                effectiveEmoji = s.isEmpty ? "🍽️" : s
+                effectiveImage = nil
+            case .image(let d):
+                effectiveEmoji = "🍽️"     // 兜底 emoji
+                effectiveImage = d
+            }
             let f = FoodRecord(name: finalName,
-                               emoji: emoji, rating: rating,
+                               emoji: effectiveEmoji, rating: rating,
                                tags: tagList,
                                remark: remark, category: category,
                                placeName: placeName, address: address,
-                               latitude: latitude, longitude: longitude)
+                               latitude: latitude, longitude: longitude,
+                               iconImage: effectiveImage)
             context.insert(f)
         }
         try? context.save()
     }
 
-    // MARK: - Emoji 网格选择
-    private var emojiPicker: some View {
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)
-        return LazyVGrid(columns: cols, spacing: 8) {
-            ForEach(Self.emojiOptions, id: \.self) { e in
-                Button {
-                    emoji = e
-                } label: {
-                    Text(e)
-                        .font(.system(size: 22))
-                        .frame(width: 40, height: 40)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(emoji == e
-                                      ? AppColorTheme.primary.opacity(0.12)
-                                      : AppColorTheme.bg)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(emoji == e ? AppColorTheme.primary : .clear,
-                                        lineWidth: 1.5)
-                        )
-                }
-                .buttonStyle(.plain)
+    // MARK: - 图标预览（60×60）
+    @ViewBuilder
+    private var iconPreview: some View {
+        switch icon {
+        case .emoji(let s):
+            Text(s.isEmpty ? "🍽️" : s)
+                .font(.system(size: 36))
+                .frame(width: 60, height: 60)
+                .background(RoundedRectangle(cornerRadius: 10).fill(AppColorTheme.bg))
+        case .image(let d):
+            if let ui = UIImage(data: d) {
+                Image(uiImage: ui)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 60, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            } else {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(AppColorTheme.bg)
+                    .frame(width: 60, height: 60)
             }
         }
-        .padding(.vertical, 4)
     }
 
-    // MARK: - 5 星评分（点第 N 颗 = N 星；再点当前分值可清 0）
+    // MARK: - 半星评分（每颗星拆左右两半 tap 区：左半 = +0.5，右半 = +1.0；再点当前值归零）
     private var starRating: some View {
         HStack(spacing: 10) {
-            ForEach(1...5, id: \.self) { i in
-                Button {
-                    rating = (rating == Double(i)) ? 0 : Double(i)
-                } label: {
-                    Image(systemName: Double(i) <= rating ? "star.fill" : "star")
-                        .font(.system(size: 26))
-                        .foregroundStyle(Double(i) <= rating
-                                         ? Color(hex: 0xF5A623)
-                                         : Color(hex: 0xC7CCD4))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+            ForEach(0..<5, id: \.self) { i in
+                starCell(index: i)
             }
             Spacer()
-            Text(rating > 0 ? "\(rating) 星" : "未评分")
+            Text(rating > 0 ? String(format: "%.1f 星", rating) : "未评分")
                 .font(.system(size: 13))
                 .foregroundStyle(AppColorTheme.textSub)
         }
         .padding(.vertical, 4)
+    }
+
+    /// 每颗星拆左右两半 tap 区：左半 = +0.5，右半 = +1.0；再点当前值归零
+    @ViewBuilder
+    private func starCell(index i: Int) -> some View {
+        let idx = Double(i)
+        let iconName: String =
+            rating >= idx + 1.0 ? "star.fill"
+            : rating >= idx + 0.5 ? "star.leadinghalf.filled"
+            : "star"
+        let filled = rating >= idx + 0.5
+
+        ZStack {
+            Image(systemName: iconName)
+                .font(.system(size: 26))
+                .foregroundStyle(filled ? Color(hex: 0xF5A623) : Color(hex: 0xC7CCD4))
+                .allowsHitTesting(false)
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: 20, height: 40)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        let target = idx + 0.5
+                        rating = (rating == target) ? 0 : target
+                    }
+                Color.clear
+                    .frame(width: 20, height: 40)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        let target = idx + 1.0
+                        rating = (rating == target) ? 0 : target
+                    }
+            }
+        }
+        .frame(width: 40, height: 40)
     }
 }
