@@ -33,7 +33,7 @@ struct SyncPayload: Codable {
 }
 ```
 
-`SyncMeta`：`deviceId / syncTimestamp / appVersion / dataVersion (=1)`
+`SyncMeta`：`deviceId / syncTimestamp / appVersion / dataVersion (=2)`
 
 `SyncData` 内含 9 个列表 + 1 个 setting map：
 - `todoList / scheduleList / anniversaryList / passwordList / otpList / foodRecordList / cookRecipeList / noteList / appModuleList / setting`
@@ -83,7 +83,7 @@ struct SyncPayload: Codable {
 
 **业务规则：**
 
-- `syncMeta`：`deviceId = AppSyncConfig.deviceID`；`syncTimestamp = Int64(unix)`；`appVersion = "1.0.0"`（硬编码）；`dataVersion = 1`
+- `syncMeta`：`deviceId = AppSyncConfig.deviceID`；`syncTimestamp = Int64(unix)`；`appVersion = "1.0.0"`（硬编码）；`dataVersion = 2`（硬编码）
 - 扫描全部 `@Model` 表：`Todo / Schedule / Anniversary / Password / OTP / Food / CookRecipe / Note / AppModule`
 - `PasswordAccount / OTPAccount` 需要额外从 Keychain 读明文；读失败以 `""` 兜底不阻断
 - `AppSetting` 当前作为 `setting: [:]` 空 map 占位（MVP 未纳入同步）
@@ -239,3 +239,11 @@ struct SyncPayload: Codable {
 - 相关模块：
   - [module-password-otp-spec.md](./module-password-otp-spec.md)（Keychain 密钥来源）
   - [module-infra-spec.md](./module-infra-spec.md)（`KeychainManager` / `LocalAuthService`）
+
+## 6. 变更历史
+
+- v2 (2026-07-26): SyncFoodDTO 增加 placeName / address / latitude / longitude 四个可选字段（美食记录位置录入）
+  - `placeName?: String`   POI 名称，dataVersion ≥ 2 起
+  - `address?: String`     结构化地址，dataVersion ≥ 2 起
+  - `latitude?: Double`    WGS84 纬度，dataVersion ≥ 2 起
+  - `longitude?: Double`   WGS84 经度，dataVersion ≥ 2 起
