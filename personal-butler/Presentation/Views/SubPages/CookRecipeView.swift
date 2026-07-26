@@ -508,6 +508,7 @@ struct CookCartSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \CookCart.addedAt) private var cartItems: [CookCart]
     @Binding var showSubmitConfirm: Bool
+    @State private var showClearConfirm: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -532,6 +533,12 @@ struct CookCartSheet: View {
             .navigationTitle("烹饪车")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("清空", role: .destructive) {
+                        showClearConfirm = true
+                    }
+                    .disabled(cartItems.isEmpty)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("关闭") { dismiss() }
                 }
@@ -542,6 +549,15 @@ struct CookCartSheet: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(cartItems.isEmpty)
                 }
+            }
+            .alert("清空烹饪车", isPresented: $showClearConfirm) {
+                Button("取消", role: .cancel) { }
+                Button("清空", role: .destructive) {
+                    for item in cartItems { context.delete(item) }
+                    try? context.save()
+                }
+            } message: {
+                Text("将移除烹饪车中的全部 \(cartItems.count) 道菜，无法撤销。")
             }
         }
     }
