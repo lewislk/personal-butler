@@ -83,7 +83,7 @@ struct SyncPayload: Codable {
 
 **业务规则：**
 
-- `syncMeta`：`deviceId = AppSyncConfig.deviceID`；`syncTimestamp = Int64(unix)`；`appVersion = "1.0.0"`（硬编码）；`dataVersion = 2`（硬编码）
+- `syncMeta`：`deviceId = AppSyncConfig.deviceID`；`syncTimestamp = Int64(unix)`；`appVersion = "1.0.0"`（硬编码）；`dataVersion = 3`（硬编码）
 - 扫描全部 `@Model` 表：`Todo / Schedule / Anniversary / Password / OTP / Food / CookRecipe / Note / AppModule`
 - `PasswordAccount / OTPAccount` 需要额外从 Keychain 读明文；读失败以 `""` 兜底不阻断
 - `AppSetting` 当前作为 `setting: [:]` 空 map 占位（MVP 未纳入同步）
