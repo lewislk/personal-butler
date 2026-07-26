@@ -67,16 +67,18 @@ struct SyncFoodDTO: Codable {
     var id: String
     var name: String
     var emoji: String
-    var rating: Int
+    var rating: Double            // v3：Int→Double；Codable 天然兼容整数 JSON 解码为 Double
     var tags: [String]
     var remark: String
     var date: Double
     var category: String
-    // 位置字段（Optional，向下兼容：老服务端/老备份缺字段解析为 nil）
+    // v2 位置字段
     var placeName: String?
     var address: String?
     var latitude: Double?
     var longitude: Double?
+    // v3 图片图标（base64 编码的 JPEG bytes；nil = 未设置）
+    var iconImageBase64: String?
 }
 
 struct SyncRecipeDTO: Codable {

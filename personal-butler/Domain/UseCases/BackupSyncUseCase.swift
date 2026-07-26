@@ -16,7 +16,7 @@ final class BackupSyncUseCase {
         let meta = SyncMeta(deviceId: AppSyncConfig.deviceID,
                             syncTimestamp: Int64(Date().timeIntervalSince1970),
                             appVersion: "1.0.0",
-                            dataVersion: 2)
+                            dataVersion: 3)
 
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         let schedules = (try? context.fetch(FetchDescriptor<ScheduleEvent>())) ?? []
@@ -68,10 +68,11 @@ final class BackupSyncUseCase {
             },
             foodRecordList: foods.map {
                 SyncFoodDTO(id: $0.id.uuidString, name: $0.name, emoji: $0.emoji,
-                            rating: Int($0.rating), tags: $0.tags, remark: $0.remark,
+                            rating: $0.rating, tags: $0.tags, remark: $0.remark,
                             date: $0.date.timeIntervalSince1970, category: $0.categoryRaw,
                             placeName: $0.placeName, address: $0.address,
-                            latitude: $0.latitude, longitude: $0.longitude)
+                            latitude: $0.latitude, longitude: $0.longitude,
+                            iconImageBase64: $0.iconImage?.base64EncodedString())
             },
             cookRecipeList: recipes.map {
                 SyncRecipeDTO(id: $0.id.uuidString, name: $0.name, emoji: $0.emoji,
@@ -148,7 +149,7 @@ final class BackupSyncUseCase {
         let url = URL(string: "http://\(AppSyncConfig.host):\(AppSyncConfig.defaultPort)\(path)")!
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.timeoutInterval = 10
+        req.timeoutInterval = 25
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(AppSyncConfig.deviceID, forHTTPHeaderField: "X-Device-ID")
         req.setValue(AppSyncConfig.token, forHTTPHeaderField: "X-Sync-Token")
@@ -338,13 +339,19 @@ final class BackupSyncUseCase {
 
         for x in data.foodRecordList {
             guard let uuid = UUID(uuidString: x.id) else { continue }
+            // 解 base64 → Data；解码失败视为无图片（保留 emoji 兜底显示）
+            let iconData: Data? = {
+                guard let b64 = x.iconImageBase64, !b64.isEmpty else { return nil }
+                return Data(base64Encoded: b64)
+            }()
             let m = FoodRecord(
                 id: uuid, name: x.name, emoji: x.emoji,
-                rating: Double(x.rating), tags: x.tags, remark: x.remark,
+                rating: x.rating, tags: x.tags, remark: x.remark,
                 date: Date(timeIntervalSince1970: x.date),
                 category: FoodCategory(rawValue: x.category) ?? .chinese,
                 placeName: x.placeName, address: x.address,
-                latitude: x.latitude, longitude: x.longitude
+                latitude: x.latitude, longitude: x.longitude,
+                iconImage: iconData
             )
             context.insert(m)
         }
