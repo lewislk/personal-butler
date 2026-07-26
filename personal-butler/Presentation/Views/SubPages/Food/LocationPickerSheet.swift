@@ -24,26 +24,38 @@ struct LocationPickerSheet: View {
     @State private var query: String = ""
     @State private var showResults: Bool = false
 
-    // 反解
+    // 反解显示
     @State private var revLabel: String = "拖动地图选择位置"
     @State private var revSubLabel: String = ""
     @State private var revTask: Task<Void, Never>?
     @State private var lastRevCoord: CLLocationCoordinate2D?
 
+    // 最终回传给业务的字段（与显示分离，避免被后续 camera 变化覆盖）
+    @State private var pickedPlaceName: String?    // 上次 POI 搜索或 initial 带入的正式店名
+    @State private var pickedAddress: String?      // 反解或 POI 附带的最新地址
+    @State private var hasInteracted: Bool         // 是否至少做过一次有效交互（选 POI 或位移 > 50m）
+    @State private var initialCoord: CLLocationCoordinate2D  // 初始中心，用于判断"是否位移"
+    @State private var suppressReverseGeocode: Bool = false  // POI 选中后抑制紧跟着的相机变化触发的反解
+
     init(initial: SelectedLocation?,
          onConfirm: @escaping (SelectedLocation) -> Void) {
         self.initial = initial
         self.onConfirm = onConfirm
-        // 有传入位置就用它；否则用一个默认区域（北京市中心，跨度 10km）
+        // 未传初始位置时用一个默认区域（北京中心）展示地图；用户必须至少交互一次（选 POI 或明显位移）才能保存
         let coord = initial.map {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
         } ?? CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074)
         _centerCoord = State(initialValue: coord)
+        _initialCoord = State(initialValue: coord)
         _camera = State(initialValue: .region(
             MKCoordinateRegion(center: coord,
                                span: MKCoordinateSpan(latitudeDelta: 0.05,
                                                      longitudeDelta: 0.05))
         ))
+        _pickedPlaceName = State(initialValue: initial?.placeName)
+        _pickedAddress = State(initialValue: initial?.address)
+        // 编辑已录入位置的场景视为已交互；全新录入必须至少交互一次
+        _hasInteracted = State(initialValue: initial != nil)
     }
 
     var body: some View {
@@ -54,6 +66,22 @@ struct LocationPickerSheet: View {
                     .onMapCameraChange { ctx in
                         centerCoord = ctx.camera.centerCoordinate
                         currentRegion = ctx.region
+
+                        // POI 选中后紧跟的相机变化：跳过反解，避免覆盖 pickedAddress
+                        if suppressReverseGeocode {
+                            suppressReverseGeocode = false
+                            return
+                        }
+
+                        // 距离初始中心 > 50m 视为"真正的位移"：标记已交互并清空 POI 名
+                        let a = CLLocation(latitude: initialCoord.latitude, longitude: initialCoord.longitude)
+                        let b = CLLocation(latitude: centerCoord.latitude, longitude: centerCoord.longitude)
+                        if a.distance(from: b) > 50 {
+                            hasInteracted = true
+                            // 拖走了 POI 名不再有效；pickedAddress 会由随后的反解回填
+                            pickedPlaceName = nil
+                        }
+
                         scheduleReverseGeocode(ctx.camera.centerCoordinate)
                     }
                     .ignoresSafeArea(edges: .bottom)
@@ -90,13 +118,14 @@ struct LocationPickerSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("确定") {
                         onConfirm(SelectedLocation(
-                            placeName: initial?.placeName,     // 拖点没有 POI 名，保留原始名（若从已选处进入）
-                            address: revLabel == "拖动地图选择位置" ? nil : revLabel,
+                            placeName: pickedPlaceName,
+                            address: pickedAddress,
                             latitude: centerCoord.latitude,
                             longitude: centerCoord.longitude
                         ))
                         dismiss()
                     }
+                    .disabled(!hasInteracted)
                 }
             }
             .onAppear {
@@ -164,6 +193,13 @@ struct LocationPickerSheet: View {
             center: centerCoord,
             span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
         ))
+        // 关键：POI 已带正式名与地址，直接落库到"picked*"字段
+        pickedPlaceName = picked.placeName
+        pickedAddress = picked.address
+        hasInteracted = true
+        // 抑制随后由 camera 变化触发的一次反解，避免覆盖 pickedAddress
+        suppressReverseGeocode = true
+
         revLabel = picked.placeName ?? picked.address ?? "已选择位置"
         revSubLabel = picked.address ?? ""
     }
@@ -189,6 +225,11 @@ struct LocationPickerSheet: View {
             await MainActor.run {
                 self.revLabel = name.isEmpty ? "已选择位置" : name
                 self.revSubLabel = addr == name ? "" : addr
+                // 只有当前没有 POI 名时（即拖动场景），才用反解结果回填 pickedAddress；
+                // 若已有 POI 名（applyPicked 已设 pickedAddress），保持不覆盖
+                if self.pickedPlaceName == nil {
+                    self.pickedAddress = addr.isEmpty ? nil : addr
+                }
             }
         }
     }
