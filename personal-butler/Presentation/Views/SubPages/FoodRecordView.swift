@@ -124,6 +124,16 @@ struct FoodRecordView: View {
                         Text(f.remark).font(.system(size: 12)).foregroundStyle(AppColorTheme.textSub)
                             .lineLimit(2)
                     }
+                    if f.hasLocation, let loc = f.displayLocation {
+                        HStack(spacing: 4) {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 10))
+                            Text(loc)
+                                .lineLimit(1)
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppColorTheme.textSub)
+                    }
                 }
                 Spacer()
             }
