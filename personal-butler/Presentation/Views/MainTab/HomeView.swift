@@ -14,12 +14,21 @@ struct HomeView: View {
     @Query(sort: \TodoItem.createdAt) private var manualTodos: [TodoItem]
     @Query(sort: \AppModule.order) private var modules: [AppModule]
 
+    @State private var prepSheetItem: TodoItem?
+    @State private var cookSheetItem: TodoItem?
+
     var body: some View {
         VStack(spacing: 0) {
             header
             content
         }
         .background(Color.white)
+        .sheet(item: $prepSheetItem) { todo in
+            PrepTaskSheet(todo: todo)
+        }
+        .sheet(item: $cookSheetItem) { todo in
+            CookTaskSheet(todo: todo)
+        }
     }
 
     // MARK: - Header
@@ -67,11 +76,7 @@ struct HomeView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(currentList.enumerated()), id: \.offset) { idx, todo in
-                        TodoItemRow(name: todo.name, source: todo.sourceLabel,
-                                    timeLabel: todo.timeLabel, urgent: todo.isUrgent,
-                                    isDone: todo.isDone) {
-                            toggle(todo)
-                        }
+                        row(for: todo)
                         if idx < currentList.count - 1 {
                             Divider().foregroundStyle(Color.black.opacity(0.04))
                         }
@@ -110,6 +115,32 @@ struct HomeView: View {
 
     // MARK: - 数据组合
 
+    @ViewBuilder
+    private func row(for todo: TodoDisplay) -> some View {
+        switch todo.taskType {
+        case .prep:
+            PrepTodoRow(name: todo.name,
+                        timeLabel: todo.timeLabel,
+                        isDone: todo.isDone,
+                        checkedCount: todo.checkedIngredients.count,
+                        expectedCount: todo.expectedIngredients.count,
+                        onToggle: { toggle(todo) },
+                        onTap: { prepSheetItem = todo.refManual })
+        case .cook:
+            CookTodoRow(name: todo.name,
+                        timeLabel: todo.timeLabel,
+                        isDone: todo.isDone,
+                        onToggle: { toggle(todo) },
+                        onTap: { cookSheetItem = todo.refManual })
+        case .none:
+            TodoItemRow(name: todo.name, source: todo.sourceLabel,
+                        timeLabel: todo.timeLabel, urgent: todo.isUrgent,
+                        isDone: todo.isDone) {
+                toggle(todo)
+            }
+        }
+    }
+
     private struct TodoDisplay: Identifiable {
         let id: String
         let name: String
@@ -120,6 +151,10 @@ struct HomeView: View {
         let sortDate: Date          // 用于时间排序，纪念日/无期限手动待办用推导时间
         let refSchedule: ScheduleEvent?
         let refManual: TodoItem?
+        let taskType: TodoTaskType
+        let recipeId: UUID?
+        let expectedIngredients: [String]
+        let checkedIngredients: [String]
     }
 
     /// 近期待办：合并今天起未来 7 天窗口内的日程、纪念日、手动/烹饪待办
@@ -145,7 +180,9 @@ struct HomeView: View {
             items.append(.init(id: "sch-\(s.id)", name: s.title, sourceLabel: "日程",
                                timeLabel: label, isUrgent: urgent, isDone: s.isCompleted,
                                sortDate: s.startDate,
-                               refSchedule: s, refManual: nil))
+                               refSchedule: s, refManual: nil,
+                               taskType: .none, recipeId: nil,
+                               expectedIngredients: [], checkedIngredients: []))
         }
 
         // 纪念日：未来 7 天内到期
@@ -157,12 +194,19 @@ struct HomeView: View {
                 items.append(.init(id: "anni-\(a.id)", name: a.name, sourceLabel: "纪念日",
                                    timeLabel: label, isUrgent: days <= 3, isDone: false,
                                    sortDate: sort,
-                                   refSchedule: nil, refManual: nil))
+                                   refSchedule: nil, refManual: nil,
+                                   taskType: .none, recipeId: nil,
+                                   expectedIngredients: [], checkedIngredients: []))
             }
         }
 
         // 手动 / 烹饪待办
         for t in manualTodos {
+            let taskType = t.taskType
+            let recipeId = t.recipeId
+            let expected = t.expectedIngredients
+            let checked = t.checkedIngredients
+
             if let d = t.dueDate {
                 guard d >= now && d <= end else { continue }
                 let label: String
@@ -178,7 +222,10 @@ struct HomeView: View {
                                    timeLabel: label,
                                    isUrgent: false, isDone: t.isDone,
                                    sortDate: d,
-                                   refSchedule: nil, refManual: t))
+                                   refSchedule: nil, refManual: t,
+                                   taskType: taskType, recipeId: recipeId,
+                                   expectedIngredients: expected,
+                                   checkedIngredients: checked))
             } else if !t.isDone {
                 // 未设截止的手动待办，视作近期，排在今天
                 items.append(.init(id: "todo-\(t.id)", name: t.name,
@@ -186,13 +233,20 @@ struct HomeView: View {
                                    timeLabel: "近期",
                                    isUrgent: false, isDone: false,
                                    sortDate: now,
-                                   refSchedule: nil, refManual: t))
+                                   refSchedule: nil, refManual: t,
+                                   taskType: taskType, recipeId: recipeId,
+                                   expectedIngredients: expected,
+                                   checkedIngredients: checked))
             }
         }
 
-        // 未完成优先；同状态下按时间升序
+        // 未完成优先 → prep > cook > none → 时间升序
         return items.sorted { a, b in
             if a.isDone != b.isDone { return !a.isDone && b.isDone }
+            if a.taskType != b.taskType {
+                let order: [TodoTaskType: Int] = [.prep: 0, .cook: 1, .none: 2]
+                return order[a.taskType]! < order[b.taskType]!
+            }
             return a.sortDate < b.sortDate
         }
     }
@@ -202,7 +256,18 @@ struct HomeView: View {
             s.isCompleted.toggle()
             try? context.save()
         } else if let t = todo.refManual {
-            t.isDone.toggle()
+            if todo.taskType == .prep {
+                // prep 圆圈点击 = 全部已买 / 取消全买
+                if t.isDone {
+                    t.checkedIngredientsRaw = ""
+                    t.isDone = false
+                } else {
+                    t.checkedIngredientsRaw = todo.expectedIngredients.joined(separator: ",")
+                    t.isDone = true
+                }
+            } else {
+                t.isDone.toggle()
+            }
             try? context.save()
         }
     }
@@ -237,5 +302,83 @@ private struct FeatureCard: View {
                         .stroke(Color(hex: 0xF0F2F5), lineWidth: 1)
                 )
         )
+    }
+}
+
+// MARK: - Prep / Cook 任务行
+
+private struct PrepTodoRow: View {
+    let name: String
+    let timeLabel: String
+    let isDone: Bool
+    let checkedCount: Int
+    let expectedCount: Int
+    let onToggle: () -> Void
+    let onTap: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onToggle) {
+                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(isDone ? AppColorTheme.primary : .secondary)
+            }
+            .buttonStyle(.plain)
+            Button(action: onTap) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(isDone ? .secondary : AppColorTheme.text)
+                        .strikethrough(isDone, color: .secondary)
+                    if expectedCount > 0 {
+                        Text("\(checkedCount)/\(expectedCount) 已买")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Text(timeLabel)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct CookTodoRow: View {
+    let name: String
+    let timeLabel: String
+    let isDone: Bool
+    let onToggle: () -> Void
+    let onTap: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onToggle) {
+                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(isDone ? AppColorTheme.primary : .secondary)
+            }
+            .buttonStyle(.plain)
+            Button(action: onTap) {
+                Text(name)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(isDone ? .secondary : AppColorTheme.text)
+                    .strikethrough(isDone, color: .secondary)
+                Spacer()
+                Label("查看步骤", systemImage: "book")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(timeLabel)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
     }
 }
