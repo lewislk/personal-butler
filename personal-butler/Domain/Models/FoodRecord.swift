@@ -6,7 +6,7 @@ import Foundation
 import SwiftData
 
 enum FoodCategory: String, Codable, CaseIterable {
-    case all, hotpot, milktea, chinese, japanese, coffee
+    case all, hotpot, milktea, chinese, western, streetfood, japanese, coffee
 
     var label: String {
         switch self {
@@ -14,6 +14,8 @@ enum FoodCategory: String, Codable, CaseIterable {
         case .hotpot: return "火锅"
         case .milktea: return "奶茶"
         case .chinese: return "中餐"
+        case .western: return "西餐"
+        case .streetfood: return "大排档"
         case .japanese: return "日料"
         case .coffee: return "咖啡"
         }
