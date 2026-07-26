@@ -41,7 +41,8 @@ struct LocationPickerSheet: View {
          onConfirm: @escaping (SelectedLocation) -> Void) {
         self.initial = initial
         self.onConfirm = onConfirm
-        // 未传初始位置时用一个默认区域（北京中心）展示地图；用户必须至少交互一次（选 POI 或明显位移）才能保存
+        // initial != nil：直接用其坐标；否则先用一个默认区域（北京中心）占位，
+        // .task 中会立即请求当前位置替换；若定位失败则保留默认区域，用户可搜索或手动拖动
         let coord = initial.map {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
         } ?? CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074)
@@ -129,7 +130,33 @@ struct LocationPickerSheet: View {
                 }
             }
             .onAppear {
-                scheduleReverseGeocode(centerCoord)
+                // 有 initial 位置：立即反解显示；无 initial：等 .task 拿到当前位置后再反解，
+                // 避免用户先看到默认区域的反解结果闪一下
+                if initial != nil {
+                    scheduleReverseGeocode(centerCoord)
+                }
+            }
+            .task {
+                // 无 initial 时用当前 GPS 作为初始中心；失败（权限拒绝/超时）保持默认区域，
+                // 让用户自己搜/拖，不弹错误干扰
+                guard initial == nil else { return }
+                do {
+                    let coord = try await LocationService.shared.requestOneShot()
+                    // 抑制紧跟着的相机变化触发的反解与位移检测；一起更新 initialCoord 让距离阈值参照点同步
+                    suppressReverseGeocode = true
+                    initialCoord = coord
+                    centerCoord = coord
+                    camera = .region(MKCoordinateRegion(
+                        center: coord,
+                        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                    ))
+                    // 大头针已经锚在真实的当前位置，视为已交互 —— 用户可直接确定"就在这里"
+                    hasInteracted = true
+                    // 主动触发一次反解补充底部卡片（suppress 开关只吃 onMapCameraChange 那一次）
+                    scheduleReverseGeocode(coord)
+                } catch {
+                    // 权限拒绝 / 超时 / 服务不可用：保持默认区域，不打扰用户
+                }
             }
         }
     }
