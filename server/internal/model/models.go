@@ -21,13 +21,19 @@ type SyncMetaRow struct {
 func (SyncMetaRow) TableName() string { return "sync_meta" }
 
 type Todo struct {
-	DeviceID  string   `gorm:"primaryKey;size:64"`
-	ID        string   `gorm:"primaryKey;size:64"`
-	Name      string   `gorm:"size:255"`
-	Source    string   `gorm:"size:32"`
-	DueDate   *float64 `gorm:"type:double"`
-	IsDone    bool
+	DeviceID string   `gorm:"primaryKey;size:64"`
+	ID       string   `gorm:"primaryKey;size:64"`
+	Name     string   `gorm:"size:255"`
+	Source   string   `gorm:"size:32"`
+	DueDate  *float64 `gorm:"type:double"`
+	IsDone   bool
 	CreatedAt float64 `gorm:"type:double"`
+	// v4 新增字段（兼容旧数据：NULL 表示未设置）
+	TaskType            *string `gorm:"size:32;column:task_type"`
+	RecipeID            *string `gorm:"size:64;column:recipe_id"`
+	// ExpectedIngredients / CheckedIngredients 存 JSON 数组字符串，如 ["番茄","鸡蛋"]
+	ExpectedIngredients *string `gorm:"type:text;column:expected_ingredients"`
+	CheckedIngredients  *string `gorm:"type:text;column:checked_ingredients"`
 }
 
 func (Todo) TableName() string { return "todo" }
@@ -91,15 +97,48 @@ type Food struct {
 	ID       string `gorm:"primaryKey;size:64"`
 	Name     string `gorm:"size:255"`
 	Emoji    string `gorm:"size:16"`
-	Rating   int
+	// v3：Int → Double（半星评分，0.0..5.0 step 0.5）
+	Rating   float64 `gorm:"type:double"`
 	// Tags 存 JSON 数组字符串，如 ["酸","辣"]，读回时序列化回 []string
 	Tags     string `gorm:"type:text"`
 	Remark   string `gorm:"type:text"`
 	Date     float64
 	Category string `gorm:"size:64"`
+	// v2 位置字段（全 NULL 表示未设置）
+	PlaceName *string `gorm:"size:255;column:place_name"`
+	Address   *string `gorm:"type:text;column:address"`
+	Latitude  *float64 `gorm:"type:double;column:latitude"`
+	Longitude *float64 `gorm:"type:double;column:longitude"`
+	// v3 图片图标（base64 编码的 JPEG bytes；NULL = 未设置）
+	IconImageBase64 *string `gorm:"type:longtext;column:icon_image_base64"`
 }
 
 func (Food) TableName() string { return "food" }
+
+// CookIngredient v4 新增：菜谱结构化食材子项
+// 主键 (device_id, id)；recipe_id 关联同 device 下的 cook_recipe.id（不走外键约束，
+// 与项目惯例一致：全量覆盖时按 device_id 清空 → 批量插入，外键会增加维护成本）。
+type CookIngredient struct {
+	DeviceID string `gorm:"primaryKey;size:64"`
+	ID       string `gorm:"primaryKey;size:64"`
+	RecipeID string `gorm:"size:64;column:recipe_id"`
+	Name     string `gorm:"size:255"`
+	Amount   string `gorm:"size:64"`
+	OrderIdx int    `gorm:"column:order_idx"`
+}
+
+func (CookIngredient) TableName() string { return "cook_ingredient" }
+
+// CookCart v4 新增：烹饪车项
+type CookCart struct {
+	DeviceID string `gorm:"primaryKey;size:64"`
+	ID       string `gorm:"primaryKey;size:64"`
+	RecipeID string `gorm:"size:64;column:recipe_id"`
+	Servings int
+	AddedAt  float64 `gorm:"type:double"`
+}
+
+func (CookCart) TableName() string { return "cook_cart" }
 
 type Recipe struct {
 	DeviceID    string `gorm:"primaryKey;size:64"`
@@ -109,9 +148,12 @@ type Recipe struct {
 	Difficulty  string `gorm:"size:32"`
 	Minutes     int
 	Category    string `gorm:"size:64"`
-	Ingredients string `gorm:"type:text"`
-	Steps       string `gorm:"type:text"`
-	Tips        string `gorm:"type:text"`
+	// v4：旧版多行文本食材字段（迁移用，与 iOS 端 ingredientsLegacyRaw 对齐）
+	IngredientsLegacyRaw string `gorm:"type:text;column:ingredients_legacy_raw"`
+	Steps                string `gorm:"type:text"`
+	Tips                 string `gorm:"type:text"`
+	// v4 新增：菜谱图片图标（base64 编码的 JPEG bytes）
+	IconImageBase64 *string `gorm:"type:longtext;column:icon_image_base64"`
 }
 
 func (Recipe) TableName() string { return "cook_recipe" }

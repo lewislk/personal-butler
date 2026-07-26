@@ -70,17 +70,29 @@ go run ./cmd/server
 - **时间戳统一 DOUBLE**：与 Swift `TimeInterval` (unix seconds since 1970, `Double`) 对齐，避免时区与精度歧义。
 - **schema 手动维护**：不启用 GORM `AutoMigrate`；改字段前请先改 `sql/init.sql` 并递增 `SyncMeta.dataVersion`。
 
+### 当前 schema 版本（dataVersion = 4，对齐 iOS 端 `SyncPayload.swift`）
+
+| 实体 | 表 | 关键字段（v4 新增 / 变更） |
+|------|----|----------------------------|
+| Todo | `todo` | v4 新增 `task_type` / `recipe_id` / `expected_ingredients` / `checked_ingredients`（NULL 表示未设置） |
+| Food | `food` | v2 新增 `place_name` / `address` / `latitude` / `longitude`；v3 `rating` INT → DOUBLE，新增 `icon_image_base64` |
+| CookRecipe | `cook_recipe` | v4 移除旧 `ingredients` 文本字段，新增 `ingredients_legacy_raw` / `icon_image_base64`；结构化食材拆到 `cook_ingredient` 子表 |
+| CookIngredient | `cook_ingredient`（v4 新增） | 主键 `(device_id, id)`，`recipe_id` 关联同 device 下的 `cook_recipe.id`，不走外键约束 |
+| CookCart | `cook_cart`（v4 新增） | 主键 `(device_id, id)`，`recipe_id` 关联同 device 下的 `cook_recipe.id` |
+
+**升级提示**：本次 schema 与 v1 不兼容（旧 `cook_recipe.ingredients` 文本字段被移除，`food.rating` 类型变更），需要先 `DROP DATABASE personal_butler` 或手动 `mysql -uroot -p < sql/init.sql` 重建全部业务表。已有 v1 备份需用对应旧版服务端恢复，新服务端只接受 v4 payload。
+
 ## curl 自测
 
 ```bash
 # 生成一个最小 payload（省略了业务字段）
 cat > /tmp/payload.json <<'JSON'
 {
-  "syncMeta": {"deviceId":"dev-1","syncTimestamp":1700000000,"appVersion":"1.0.0","dataVersion":1},
+  "syncMeta": {"deviceId":"dev-1","syncTimestamp":1700000000,"appVersion":"1.0.0","dataVersion":4},
   "data": {
-    "todoList":[{"id":"t1","name":"测试","source":"manual","dueDate":null,"isDone":false,"createdAt":1700000000}],
+    "todoList":[{"id":"t1","name":"测试","source":"manual","dueDate":null,"isDone":false,"createdAt":1700000000,"taskType":"none"}],
     "scheduleList":[], "anniversaryList":[], "passwordList":[], "otpList":[],
-    "foodRecordList":[], "cookRecipeList":[], "noteList":[], "appModuleList":[],
+    "foodRecordList":[], "cookRecipeList":[], "cartList":[], "noteList":[], "appModuleList":[],
     "setting":{}
   }
 }
@@ -101,3 +113,45 @@ curl -s http://127.0.0.1:8090/sync/info \
 curl -s -X DELETE http://127.0.0.1:8090/sync/clear \
   -H 'X-Device-ID: dev-1' -H 'X-Sync-Token: changeme'
 ```
+
+## Web 表单录入
+
+服务端在 `/web` 路径暴露一个嵌入式 HTML 表单（资源通过 `embed.FS` 打进二进制，零外部依赖），方便在电脑上录入菜谱等结构化数据，写入 DB 后 iOS 端走「局域网同步 → 下载」即可恢复到本地。
+
+### 访问
+
+```
+http://<host>:8090/web
+```
+
+### 配置项
+
+页面右上角「⚙️ 配置」按钮：
+
+- **Device ID**：与 iOS 端 `AppSyncConfig.deviceID` 一致（从 iOS 端「我的 → 局域网同步」可看到前缀）
+- **Sync Token**：与服务端 `SYNC_TOKEN` 环境变量一致
+
+两项保存在浏览器 `localStorage`，下次访问自动回填。
+
+### API
+
+`/api/recipes/*` 共用 `/sync/*` 的 `X-Device-ID` + `X-Sync-Token` 鉴权头：
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/recipes` | 列出该 device 全部菜谱（含 ingredients） |
+| GET | `/api/recipes/:id` | 取单条菜谱 |
+| POST | `/api/recipes` | 新建菜谱 + 食材子项，返回 `{id}` |
+| PUT | `/api/recipes/:id` | 全量更新菜谱 + 替换 ingredients |
+| DELETE | `/api/recipes/:id` | 删除菜谱及其 ingredients |
+
+每次写入都会 upsert `sync_meta` 行（`appVersion="web-form"`、`dataVersion=4`、`syncTimestamp=now`），保证 iOS 客户端即使从未 upload 过也能直接 download 到 Web 录入的数据。
+
+### 推荐使用流程
+
+1. iOS 端先做一次 **上传**，把本地状态推到服务端（避免之后 download 把本地数据覆盖丢失）
+2. 浏览器打开 `/web`，配置 Device ID + Token
+3. 录入 / 编辑菜谱，保存到 DB
+4. iOS 端做 **下载** → restore：本地数据被服务端数据全量替换，包含 Web 新增的菜谱
+
+> **注意**：iOS 端 upload 是全量覆盖语义（`DELETE WHERE device_id + INSERT`）。如果 iOS 在 Web 录入后再 upload，会**清空** Web 录入的数据。请严格遵循"先 iOS upload → 再 Web 编辑 → 再 iOS download"的顺序。

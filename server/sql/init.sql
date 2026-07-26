@@ -13,6 +13,7 @@
 --      （Go 侧类型 float64；MySQL 侧使用 DOUBLE），避免时区与精度歧义。
 --   4. 敏感字段：password.password_plain / otp.secret_plain 明文入库 —— 与
 --      客户端契约一致（仅局域网内使用，二期上 AES 后再迁移）。
+--   5. 当前 schema 对齐 iOS 端 SyncMeta.dataVersion = 4。
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS `personal_butler`
@@ -27,21 +28,25 @@ CREATE TABLE `sync_meta` (
     `device_id`       VARCHAR(64)  NOT NULL,
     `sync_timestamp`  BIGINT       NOT NULL,
     `app_version`     VARCHAR(32)  NOT NULL DEFAULT '',
-    `data_version`    INT          NOT NULL DEFAULT 1,
+    `data_version`    INT          NOT NULL DEFAULT 4,
     `updated_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`device_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------- todo ----------
+-- ---------- todo（v4 新增 task_type / recipe_id / expected_ingredients / checked_ingredients） ----------
 DROP TABLE IF EXISTS `todo`;
 CREATE TABLE `todo` (
-    `device_id`   VARCHAR(64)  NOT NULL,
-    `id`          VARCHAR(64)  NOT NULL,
-    `name`        VARCHAR(255) NOT NULL DEFAULT '',
-    `source`      VARCHAR(32)  NOT NULL DEFAULT '',
-    `due_date`    DOUBLE       NULL,
-    `is_done`     TINYINT(1)   NOT NULL DEFAULT 0,
-    `created_at`  DOUBLE       NOT NULL DEFAULT 0,
+    `device_id`             VARCHAR(64)  NOT NULL,
+    `id`                    VARCHAR(64)  NOT NULL,
+    `name`                  VARCHAR(255) NOT NULL DEFAULT '',
+    `source`                VARCHAR(32)  NOT NULL DEFAULT '',
+    `due_date`              DOUBLE       NULL,
+    `is_done`               TINYINT(1)   NOT NULL DEFAULT 0,
+    `created_at`            DOUBLE       NOT NULL DEFAULT 0,
+    `task_type`             VARCHAR(32)  NULL,
+    `recipe_id`             VARCHAR(64)  NULL,
+    `expected_ingredients`  TEXT         NULL,
+    `checked_ingredients`   TEXT         NULL,
     PRIMARY KEY (`device_id`, `id`),
     KEY `idx_todo_device_done` (`device_id`, `is_done`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -107,36 +112,67 @@ CREATE TABLE `otp` (
     KEY `idx_otp_device_order` (`device_id`, `order_idx`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------- food（美食记录，tags 存 JSON 字符串） ----------
+-- ---------- food（v2 位置字段 / v3 rating→DOUBLE + icon_image_base64） ----------
 DROP TABLE IF EXISTS `food`;
 CREATE TABLE `food` (
-    `device_id` VARCHAR(64)  NOT NULL,
-    `id`        VARCHAR(64)  NOT NULL,
-    `name`      VARCHAR(255) NOT NULL DEFAULT '',
-    `emoji`     VARCHAR(16)  NOT NULL DEFAULT '',
-    `rating`    INT          NOT NULL DEFAULT 0,
-    `tags`      TEXT         NULL,
-    `remark`    TEXT         NULL,
-    `date`      DOUBLE       NOT NULL DEFAULT 0,
-    `category`  VARCHAR(64)  NOT NULL DEFAULT '',
+    `device_id`           VARCHAR(64)  NOT NULL,
+    `id`                  VARCHAR(64)  NOT NULL,
+    `name`                VARCHAR(255) NOT NULL DEFAULT '',
+    `emoji`               VARCHAR(16)  NOT NULL DEFAULT '',
+    `rating`              DOUBLE       NOT NULL DEFAULT 0,
+    `tags`                TEXT         NULL,
+    `remark`              TEXT         NULL,
+    `date`                DOUBLE       NOT NULL DEFAULT 0,
+    `category`            VARCHAR(64)  NOT NULL DEFAULT '',
+    `place_name`          VARCHAR(255) NULL,
+    `address`             TEXT         NULL,
+    `latitude`            DOUBLE       NULL,
+    `longitude`           DOUBLE       NULL,
+    `icon_image_base64`   LONGTEXT     NULL,
     PRIMARY KEY (`device_id`, `id`),
     KEY `idx_food_device_date` (`device_id`, `date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------- cook_recipe ----------
+-- ---------- cook_recipe（v4：移除旧 ingredients 文本字段，新增 ingredients_legacy_raw / icon_image_base64） ----------
 DROP TABLE IF EXISTS `cook_recipe`;
 CREATE TABLE `cook_recipe` (
-    `device_id`    VARCHAR(64)  NOT NULL,
-    `id`           VARCHAR(64)  NOT NULL,
-    `name`         VARCHAR(255) NOT NULL DEFAULT '',
-    `emoji`        VARCHAR(16)  NOT NULL DEFAULT '',
-    `difficulty`   VARCHAR(32)  NOT NULL DEFAULT '',
-    `minutes`      INT          NOT NULL DEFAULT 0,
-    `category`     VARCHAR(64)  NOT NULL DEFAULT '',
-    `ingredients`  TEXT         NULL,
-    `steps`        TEXT         NULL,
-    `tips`         TEXT         NULL,
+    `device_id`               VARCHAR(64)  NOT NULL,
+    `id`                      VARCHAR(64)  NOT NULL,
+    `name`                    VARCHAR(255) NOT NULL DEFAULT '',
+    `emoji`                   VARCHAR(16)  NOT NULL DEFAULT '',
+    `difficulty`              VARCHAR(32)  NOT NULL DEFAULT '',
+    `minutes`                 INT          NOT NULL DEFAULT 0,
+    `category`                VARCHAR(64)  NOT NULL DEFAULT '',
+    `ingredients_legacy_raw`  TEXT         NULL,
+    `steps`                   TEXT         NULL,
+    `tips`                    TEXT         NULL,
+    `icon_image_base64`       LONGTEXT     NULL,
     PRIMARY KEY (`device_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- cook_ingredient（v4 新增：菜谱结构化食材子项） ----------
+DROP TABLE IF EXISTS `cook_ingredient`;
+CREATE TABLE `cook_ingredient` (
+    `device_id`   VARCHAR(64)  NOT NULL,
+    `id`          VARCHAR(64)  NOT NULL,
+    `recipe_id`   VARCHAR(64)  NOT NULL,
+    `name`        VARCHAR(255) NOT NULL DEFAULT '',
+    `amount`      VARCHAR(64)  NOT NULL DEFAULT '',
+    `order_idx`   INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (`device_id`, `id`),
+    KEY `idx_cook_ingredient_recipe` (`device_id`, `recipe_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- cook_cart（v4 新增：烹饪车项） ----------
+DROP TABLE IF EXISTS `cook_cart`;
+CREATE TABLE `cook_cart` (
+    `device_id`   VARCHAR(64)  NOT NULL,
+    `id`          VARCHAR(64)  NOT NULL,
+    `recipe_id`   VARCHAR(64)  NOT NULL,
+    `servings`    INT          NOT NULL DEFAULT 1,
+    `added_at`    DOUBLE       NOT NULL DEFAULT 0,
+    PRIMARY KEY (`device_id`, `id`),
+    KEY `idx_cook_cart_recipe` (`device_id`, `recipe_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- note ----------

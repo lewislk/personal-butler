@@ -17,6 +17,7 @@ import (
 	"github.com/lewis/personal-butler/internal/handler"
 	"github.com/lewis/personal-butler/internal/middleware"
 	"github.com/lewis/personal-butler/internal/service"
+	"github.com/lewis/personal-butler/internal/web"
 )
 
 func main() {
@@ -33,6 +34,10 @@ func main() {
 	svc := service.NewSyncService(gdb)
 	syncH := handler.NewSyncHandler(svc)
 
+	// Web 表单录入用的 recipe CRUD service（共享同一个 DB）
+	recipeSvc := service.NewRecipeService(gdb)
+	recipeH := handler.NewRecipeHandler(recipeSvc)
+
 	if cfg.SyncToken == "" {
 		log.Println("[warn] SYNC_TOKEN 未配置，将跳过 X-Sync-Token 校验（仅建议在开发环境这样做）")
 	}
@@ -43,8 +48,16 @@ func main() {
 	// 健康检查（不走鉴权，便于 curl）
 	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
+	// Web 表单页面（HTML/JS/CSS 通过 embed.FS 嵌入二进制；不走鉴权）
+	web.Register(r)
+
+	// /sync/* 局域网同步（iOS 客户端）
 	sync := r.Group("/sync", middleware.AuthHeader(cfg.SyncToken))
 	syncH.Register(sync)
+
+	// /api/* Web 表单 CRUD（与 /sync/* 共享同一套鉴权头）
+	api := r.Group("/api", middleware.AuthHeader(cfg.SyncToken))
+	recipeH.Register(api)
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),

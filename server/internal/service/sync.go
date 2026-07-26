@@ -139,7 +139,8 @@ func deviceScopedTables() []any {
 	return []any{
 		&model.Todo{}, &model.Schedule{}, &model.Anniversary{},
 		&model.Password{}, &model.OTP{},
-		&model.Food{}, &model.Recipe{}, &model.Note{},
+		&model.Food{}, &model.Recipe{}, &model.CookIngredient{}, &model.CookCart{},
+		&model.Note{},
 		&model.AppModule{}, &model.AppSetting{},
 	}
 }
@@ -153,17 +154,53 @@ func clearDevice(tx *gorm.DB, deviceID string) error {
 	return nil
 }
 
+// joinStringSlice 把 []string 序列化为 JSON 数组字符串；nil → "" （DB 存 NULL）
+func joinStringSlice(s []string) string {
+	if s == nil {
+		return ""
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// parseStringSlice 反向：JSON 数组字符串 → []string；空串 → nil
+func parseStringSlice(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil
+	}
+	return out
+}
+
 func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 	d := &p.Data
 
 	if len(d.TodoList) > 0 {
 		rows := make([]model.Todo, 0, len(d.TodoList))
 		for _, x := range d.TodoList {
-			rows = append(rows, model.Todo{
+			row := model.Todo{
 				DeviceID: deviceID, ID: x.ID,
 				Name: x.Name, Source: x.Source, DueDate: x.DueDate,
 				IsDone: x.IsDone, CreatedAt: x.CreatedAt,
-			})
+			}
+			// v4 Optional 字段：指针拷贝
+			row.TaskType = x.TaskType
+			row.RecipeID = x.RecipeID
+			if len(x.ExpectedIngredients) > 0 {
+				s := joinStringSlice(x.ExpectedIngredients)
+				row.ExpectedIngredients = &s
+			}
+			if len(x.CheckedIngredients) > 0 {
+				s := joinStringSlice(x.CheckedIngredients)
+				row.CheckedIngredients = &s
+			}
+			rows = append(rows, row)
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
 			return err
@@ -239,6 +276,10 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				Name: x.Name, Emoji: x.Emoji, Rating: x.Rating,
 				Tags: string(tags), Remark: x.Remark,
 				Date: x.Date, Category: x.Category,
+				// v2 位置 / v3 图片
+				PlaceName: x.PlaceName, Address: x.Address,
+				Latitude: x.Latitude, Longitude: x.Longitude,
+				IconImageBase64: x.IconImageBase64,
 			})
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
@@ -246,6 +287,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		}
 	}
 
+	// cook_recipe + cook_ingredient：先建 recipe 拿到 id，再批量建 ingredient
 	if len(d.CookRecipeList) > 0 {
 		rows := make([]model.Recipe, 0, len(d.CookRecipeList))
 		for _, x := range d.CookRecipeList {
@@ -253,7 +295,40 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				DeviceID: deviceID, ID: x.ID,
 				Name: x.Name, Emoji: x.Emoji, Difficulty: x.Difficulty,
 				Minutes: x.Minutes, Category: x.Category,
-				Ingredients: x.Ingredients, Steps: x.Steps, Tips: x.Tips,
+				IngredientsLegacyRaw: x.IngredientsLegacyRaw,
+				Steps: x.Steps, Tips: x.Tips,
+				IconImageBase64: x.IconImageBase64,
+			})
+		}
+		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+			return err
+		}
+
+		// 收集所有 ingredient 扁平成一批插入（recipe_id 取自 DTO）
+		ingRows := make([]model.CookIngredient, 0, len(d.CookRecipeList)*4)
+		for _, x := range d.CookRecipeList {
+			for _, ing := range x.Ingredients {
+				ingRows = append(ingRows, model.CookIngredient{
+					DeviceID: deviceID, ID: ing.ID,
+					RecipeID: x.ID, Name: ing.Name,
+					Amount: ing.Amount, OrderIdx: ing.Order,
+				})
+			}
+		}
+		if len(ingRows) > 0 {
+			if err := tx.CreateInBatches(ingRows, 200).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	// cook_cart：v4 新增
+	if len(d.CartList) > 0 {
+		rows := make([]model.CookCart, 0, len(d.CartList))
+		for _, x := range d.CartList {
+			rows = append(rows, model.CookCart{
+				DeviceID: deviceID, ID: x.ID,
+				RecipeID: x.RecipeID, Servings: x.Servings, AddedAt: x.AddedAt,
 			})
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
@@ -311,6 +386,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	out.OTPList = []dto.SyncOTPDTO{}
 	out.FoodRecordList = []dto.SyncFoodDTO{}
 	out.CookRecipeList = []dto.SyncRecipeDTO{}
+	out.CartList = []dto.SyncCartDTO{}
 	out.NoteList = []dto.SyncNoteDTO{}
 	out.AppModuleList = []dto.SyncModuleDTO{}
 	out.Setting = map[string]string{}
@@ -320,10 +396,19 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 		return err
 	}
 	for _, x := range todos {
-		out.TodoList = append(out.TodoList, dto.SyncTodoDTO{
+		row := dto.SyncTodoDTO{
 			ID: x.ID, Name: x.Name, Source: x.Source,
 			DueDate: x.DueDate, IsDone: x.IsDone, CreatedAt: x.CreatedAt,
-		})
+			// v4 Optional 字段
+			TaskType: x.TaskType, RecipeID: x.RecipeID,
+		}
+		if x.ExpectedIngredients != nil {
+			row.ExpectedIngredients = parseStringSlice(*x.ExpectedIngredients)
+		}
+		if x.CheckedIngredients != nil {
+			row.CheckedIngredients = parseStringSlice(*x.CheckedIngredients)
+		}
+		out.TodoList = append(out.TodoList, row)
 	}
 
 	var schedules []model.Schedule
@@ -388,18 +473,51 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 		out.FoodRecordList = append(out.FoodRecordList, dto.SyncFoodDTO{
 			ID: x.ID, Name: x.Name, Emoji: x.Emoji, Rating: x.Rating,
 			Tags: tags, Remark: x.Remark, Date: x.Date, Category: x.Category,
+			// v2 位置 / v3 图片
+			PlaceName: x.PlaceName, Address: x.Address,
+			Latitude: x.Latitude, Longitude: x.Longitude,
+			IconImageBase64: x.IconImageBase64,
 		})
 	}
 
+	// cook_recipe + cook_ingredient：先查 recipe，再查该 device 全部 ingredient 按 recipe_id 分组
 	var recipes []model.Recipe
 	if err := db.Where("device_id = ?", deviceID).Find(&recipes).Error; err != nil {
 		return err
 	}
+	var allIngs []model.CookIngredient
+	if err := db.Where("device_id = ?", deviceID).Order("order_idx asc").Find(&allIngs).Error; err != nil {
+		return err
+	}
+	ingByRecipe := make(map[string][]dto.SyncIngredientDTO, len(recipes))
+	for _, ing := range allIngs {
+		ingByRecipe[ing.RecipeID] = append(ingByRecipe[ing.RecipeID], dto.SyncIngredientDTO{
+			ID: ing.ID, Name: ing.Name, Amount: ing.Amount, Order: ing.OrderIdx,
+		})
+	}
 	for _, x := range recipes {
+		ings := ingByRecipe[x.ID]
+		if ings == nil {
+			ings = []dto.SyncIngredientDTO{}
+		}
 		out.CookRecipeList = append(out.CookRecipeList, dto.SyncRecipeDTO{
 			ID: x.ID, Name: x.Name, Emoji: x.Emoji, Difficulty: x.Difficulty,
 			Minutes: x.Minutes, Category: x.Category,
-			Ingredients: x.Ingredients, Steps: x.Steps, Tips: x.Tips,
+			IngredientsLegacyRaw: x.IngredientsLegacyRaw,
+			Ingredients:          ings,
+			Steps:                x.Steps, Tips: x.Tips,
+			IconImageBase64: x.IconImageBase64,
+		})
+	}
+
+	// cook_cart：v4 新增
+	var carts []model.CookCart
+	if err := db.Where("device_id = ?", deviceID).Order("added_at asc").Find(&carts).Error; err != nil {
+		return err
+	}
+	for _, x := range carts {
+		out.CartList = append(out.CartList, dto.SyncCartDTO{
+			ID: x.ID, RecipeID: x.RecipeID, Servings: x.Servings, AddedAt: x.AddedAt,
 		})
 	}
 

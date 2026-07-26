@@ -17,6 +17,11 @@ type SyncTodoDTO struct {
 	DueDate   *float64 `json:"dueDate"`
 	IsDone    bool     `json:"isDone"`
 	CreatedAt float64  `json:"createdAt"`
+	// v4 新增字段（与 iOS 端 Optional 对齐：指针类型，nil → JSON null）
+	TaskType            *string  `json:"taskType,omitempty"`
+	RecipeID            *string  `json:"recipeId,omitempty"`
+	ExpectedIngredients []string `json:"expectedIngredients,omitempty"`
+	CheckedIngredients  []string `json:"checkedIngredients,omitempty"`
 }
 
 type SyncScheduleDTO struct {
@@ -65,11 +70,34 @@ type SyncFoodDTO struct {
 	ID       string   `json:"id"`
 	Name     string   `json:"name"`
 	Emoji    string   `json:"emoji"`
-	Rating   int      `json:"rating"`
+	Rating   float64  `json:"rating"` // v3：Int→Double（半星评分）
 	Tags     []string `json:"tags"`
 	Remark   string   `json:"remark"`
 	Date     float64  `json:"date"`
 	Category string   `json:"category"`
+	// v2 位置字段
+	PlaceName *string `json:"placeName,omitempty"`
+	Address   *string `json:"address,omitempty"`
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
+	// v3 图片图标（base64 编码的 JPEG bytes；nil = 未设置）
+	IconImageBase64 *string `json:"iconImageBase64,omitempty"`
+}
+
+// SyncIngredientDTO v4 新增：菜谱结构化食材子项
+type SyncIngredientDTO struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Amount string `json:"amount"`
+	Order  int    `json:"order"`
+}
+
+// SyncCartDTO v4 新增：烹饪车项
+type SyncCartDTO struct {
+	ID       string  `json:"id"`
+	RecipeID string  `json:"recipeId"`
+	Servings int     `json:"servings"`
+	AddedAt  float64 `json:"addedAt"`
 }
 
 type SyncRecipeDTO struct {
@@ -79,9 +107,13 @@ type SyncRecipeDTO struct {
 	Difficulty  string `json:"difficulty"`
 	Minutes     int    `json:"minutes"`
 	Category    string `json:"category"`
-	Ingredients string `json:"ingredients"`
-	Steps       string `json:"steps"`
-	Tips        string `json:"tips"`
+	// v4：原 ingredients 字段类型由 String 改为 [SyncIngredientDTO]
+	IngredientsLegacyRaw string                `json:"ingredientsLegacyRaw"`
+	Ingredients          []SyncIngredientDTO   `json:"ingredients"`
+	Steps                string                `json:"steps"`
+	Tips                 string                `json:"tips"`
+	// v4 新增：菜谱图片图标（base64 编码的 JPEG bytes）
+	IconImageBase64 *string `json:"iconImageBase64,omitempty"`
 }
 
 type SyncNoteDTO struct {
@@ -110,9 +142,11 @@ type SyncData struct {
 	OTPList         []SyncOTPDTO      `json:"otpList"`
 	FoodRecordList  []SyncFoodDTO     `json:"foodRecordList"`
 	CookRecipeList  []SyncRecipeDTO   `json:"cookRecipeList"`
-	NoteList        []SyncNoteDTO     `json:"noteList"`
-	AppModuleList   []SyncModuleDTO   `json:"appModuleList"`
-	Setting         map[string]string `json:"setting"`
+	// v4 新增（与 iOS 端 Optional 对齐：nil → JSON null，旧服务端兼容）
+	CartList      []SyncCartDTO   `json:"cartList"`
+	NoteList      []SyncNoteDTO   `json:"noteList"`
+	AppModuleList []SyncModuleDTO `json:"appModuleList"`
+	Setting       map[string]string `json:"setting"`
 }
 
 type SyncPayload struct {

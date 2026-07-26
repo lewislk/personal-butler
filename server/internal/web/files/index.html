@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>PersonalButler · 菜谱录入</title>
+  <link rel="stylesheet" href="/web/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-emoji">🍲</span>
+      <h1>菜谱录入</h1>
+    </div>
+    <button id="btn-settings" class="btn ghost" title="配置">⚙️ 配置</button>
+  </header>
+
+  <!-- 配置面板（首次进入会自动展开） -->
+  <section id="settings-panel" class="card hidden">
+    <h2>同步配置</h2>
+    <p class="hint">在 iOS 端「我的 → 局域网同步」可看到当前设备的 Device ID 前缀；完整 ID 请从 AppSyncConfig 读取。
+      Token 与 iOS 端「同步密钥」一致即可。配置保存在浏览器 localStorage。</p>
+    <label>
+      <span>Device ID</span>
+      <input id="cfg-device-id" type="text" placeholder="例如：8F5B2A3C-..." autocomplete="off" />
+    </label>
+    <label>
+      <span>Sync Token</span>
+      <input id="cfg-sync-token" type="text" placeholder="与服务端 SYNC_TOKEN 一致" autocomplete="off" />
+    </label>
+    <div class="row">
+      <button id="btn-save-cfg" class="btn primary">保存</button>
+      <button id="btn-close-cfg" class="btn ghost">关闭</button>
+    </div>
+  </section>
+
+  <!-- 主区：左侧列表 + 右侧表单 -->
+  <main class="layout">
+    <section class="list-pane">
+      <div class="list-header">
+        <h2>菜谱列表</h2>
+        <button id="btn-new" class="btn primary">+ 新建</button>
+      </div>
+      <div id="recipe-list" class="recipe-list">
+        <p class="empty">未加载</p>
+      </div>
+    </section>
+
+    <section class="form-pane">
+      <div id="form-wrap" class="card hidden">
+        <form id="recipe-form">
+          <input type="hidden" id="f-id" />
+
+          <div class="grid-2">
+            <label>
+              <span>名称 <em>*</em></span>
+              <input id="f-name" type="text" required placeholder="番茄炒蛋" />
+            </label>
+            <label>
+              <span>Emoji 图标</span>
+              <input id="f-emoji" type="text" maxlength="8" placeholder="🍳" value="🍲" />
+            </label>
+          </div>
+
+          <div class="grid-3">
+            <label>
+              <span>难度</span>
+              <select id="f-difficulty">
+                <option value="easy">简单</option>
+                <option value="medium">中等</option>
+                <option value="hard">进阶</option>
+              </select>
+            </label>
+            <label>
+              <span>分钟</span>
+              <input id="f-minutes" type="number" min="1" value="30" />
+            </label>
+            <label>
+              <span>分类</span>
+              <select id="f-category">
+                <option value="home">家常菜</option>
+                <option value="noodle">面食</option>
+                <option value="soup">汤羹</option>
+                <option value="dessert">甜品</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span>图片图标（可选，JPEG/PNG ≤ 512px）</span>
+            <div class="icon-row">
+              <img id="icon-preview" class="icon-preview hidden" alt="预览" />
+              <input id="f-icon" type="file" accept="image/jpeg,image/png" />
+              <button type="button" id="btn-clear-icon" class="btn ghost small">清除</button>
+            </div>
+          </label>
+
+          <fieldset class="ingredients">
+            <legend>
+              <span>食材</span>
+              <button type="button" id="btn-add-ing" class="btn ghost small">+ 添加</button>
+            </legend>
+            <div id="ingredients-list"></div>
+            <p class="hint">食材名 + 用量 + 顺序；行顺序由「顺序」数字控制，相等时按录入顺序。</p>
+          </fieldset>
+
+          <label>
+            <span>步骤（每行一条）</span>
+            <textarea id="f-steps" rows="6" placeholder="1. 鸡蛋打散加少许盐&#10;2. 番茄切块&#10;3. ..."></textarea>
+          </label>
+
+          <label>
+            <span>小贴士</span>
+            <textarea id="f-tips" rows="3" placeholder="可选，例如：盐别放多"></textarea>
+          </label>
+
+          <label>
+            <span>旧版食材文本（迁移用，一般留空）</span>
+            <textarea id="f-legacy" rows="2" placeholder="兼容字段，新数据请用上面的食材列表"></textarea>
+          </label>
+
+          <div class="form-actions">
+            <button type="submit" id="btn-save" class="btn primary">保存</button>
+            <button type="button" id="btn-cancel" class="btn ghost">取消</button>
+            <button type="button" id="btn-delete" class="btn danger hidden">删除</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="form-empty" class="empty-state">
+        <p class="big-emoji">👈</p>
+        <p>点击「+ 新建」或在左侧选择一条菜谱开始录入</p>
+        <p class="hint">保存后，iOS 端走「局域网同步 → 下载」即可恢复到本地</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- 提示 toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/web/static/app.js"></script>
+</body>
+</html>
