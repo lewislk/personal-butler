@@ -19,6 +19,11 @@ struct SyncTodoDTO: Codable {
     var dueDate: Double?
     var isDone: Bool
     var createdAt: Double
+    // v4 新增字段
+    var taskType: String?
+    var recipeId: String?
+    var expectedIngredients: [String]?
+    var checkedIngredients: [String]?
 }
 
 struct SyncScheduleDTO: Codable {
@@ -81,6 +86,20 @@ struct SyncFoodDTO: Codable {
     var iconImageBase64: String?
 }
 
+struct SyncIngredientDTO: Codable {
+    var id: String
+    var name: String
+    var amount: String
+    var order: Int
+}
+
+struct SyncCartDTO: Codable {
+    var id: String
+    var recipeId: String
+    var servings: Int
+    var addedAt: Double
+}
+
 struct SyncRecipeDTO: Codable {
     var id: String
     var name: String
@@ -88,9 +107,11 @@ struct SyncRecipeDTO: Codable {
     var difficulty: String
     var minutes: Int
     var category: String
-    var ingredients: String
+    var ingredientsLegacyRaw: String
+    var ingredients: [SyncIngredientDTO]
     var steps: String
     var tips: String
+    var iconImageBase64: String?
 }
 
 struct SyncNoteDTO: Codable {
@@ -119,6 +140,7 @@ struct SyncData: Codable {
     var otpList: [SyncOTPDTO]
     var foodRecordList: [SyncFoodDTO]
     var cookRecipeList: [SyncRecipeDTO]
+    var cartList: [SyncCartDTO]?
     var noteList: [SyncNoteDTO]
     var appModuleList: [SyncModuleDTO]
     var setting: [String: String]

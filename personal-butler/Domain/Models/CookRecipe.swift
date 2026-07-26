@@ -38,23 +38,40 @@ final class CookRecipe {
     var difficultyRaw: String
     var minutes: Int
     var categoryRaw: String
-    var ingredients: String   // 多行
+
+    /// 旧版多行文本食材字段（迁移用，不删；新代码请用 `ingredients: [CookIngredient]`）
+    var ingredientsLegacyRaw: String
+    /// 结构化食材（与 CookIngredient 一对多）
+    @Relationship(deleteRule: .cascade) var ingredients: [CookIngredient]
+    /// 烹饪车项（与 CookCart 一对多；删除菜谱时 cascade 删除车项）
+    @Relationship(deleteRule: .cascade) var cartItems: [CookCart]
+
     var steps: String         // 多行
     var tips: String
+
+    /// 图片图标（JPEG 二进制，与 FoodRecord 一致）
+    @Attribute(.externalStorage) var iconImage: Data?
 
     init(id: UUID = UUID(), name: String, emoji: String = "🍲",
          difficulty: CookDifficulty = .easy, minutes: Int = 30,
          category: CookCategory = .home,
-         ingredients: String = "", steps: String = "", tips: String = "") {
+         ingredientsLegacyRaw: String = "",
+         ingredients: [CookIngredient] = [],
+         cartItems: [CookCart] = [],
+         steps: String = "", tips: String = "",
+         iconImage: Data? = nil) {
         self.id = id
         self.name = name
         self.emoji = emoji
         self.difficultyRaw = difficulty.rawValue
         self.minutes = minutes
         self.categoryRaw = category.rawValue
+        self.ingredientsLegacyRaw = ingredientsLegacyRaw
         self.ingredients = ingredients
+        self.cartItems = cartItems
         self.steps = steps
         self.tips = tips
+        self.iconImage = iconImage
     }
 
     var difficulty: CookDifficulty { CookDifficulty(rawValue: difficultyRaw) ?? .easy }

@@ -111,17 +111,50 @@ enum SeedData {
     }
 
     private static func seedRecipes(_ ctx: ModelContext) {
-        let list: [CookRecipe] = [
-            .init(name: "番茄鸡蛋面", emoji: "🍅", difficulty: .easy,   minutes: 20, category: .noodle,
-                  ingredients: "面条 200g\n番茄 2 个\n鸡蛋 2 枚",
-                  steps: "1. 番茄去皮切块\n2. 鸡蛋炒散\n3. 加水煮面 10 分钟"),
-            .init(name: "蒜蓉炒时蔬", emoji: "🥬", difficulty: .easy,   minutes: 10, category: .home),
-            .init(name: "红烧肉",     emoji: "🍖", difficulty: .medium, minutes: 90, category: .home),
-            .init(name: "舒芙蕾松饼", emoji: "🍰", difficulty: .hard,   minutes: 40, category: .dessert),
-            .init(name: "日式豚骨拉面", emoji: "🍜", difficulty: .hard, minutes: 120, category: .noodle),
-            .init(name: "冬瓜排骨汤", emoji: "🍲", difficulty: .easy,   minutes: 60, category: .soup),
+        struct R {
+            let name: String; let emoji: String; let difficulty: CookDifficulty
+            let minutes: Int; let category: CookCategory
+            let ingredients: [(name: String, amount: String)]
+            let steps: String; let tips: String
+        }
+        let list: [R] = [
+            .init(name: "番茄鸡蛋面", emoji: "🍅", difficulty: .easy, minutes: 20, category: .noodle,
+                  ingredients: [("面条", "200g"), ("番茄", "2 个"), ("鸡蛋", "2 枚")],
+                  steps: "1. 番茄去皮切块\n2. 鸡蛋炒散\n3. 加水煮面 10 分钟",
+                  tips: "鸡蛋炒时加少许料酒去腥"),
+            .init(name: "蒜蓉炒时蔬", emoji: "🥬", difficulty: .easy, minutes: 10, category: .home,
+                  ingredients: [("时蔬", "1 把"), ("蒜蓉", "适量")],
+                  steps: "1. 蒜蓉爆香\n2. 大火快炒 2 分钟",
+                  tips: ""),
+            .init(name: "红烧肉", emoji: "🍖", difficulty: .medium, minutes: 90, category: .home,
+                  ingredients: [("五花肉", "500g"), ("冰糖", "30g"), ("生抽", "2 勺")],
+                  steps: "1. 五花肉焯水\n2. 冰糖炒糖色\n3. 加生抽炖 60 分钟",
+                  tips: "糖色炒至琥珀色即可，过头发苦"),
+            .init(name: "舒芙蕾松饼", emoji: "🍰", difficulty: .hard, minutes: 40, category: .dessert,
+                  ingredients: [("鸡蛋", "2 枚"), ("低筋面粉", "60g"), ("牛奶", "100ml")],
+                  steps: "1. 蛋黄 + 面粉 + 牛奶拌匀\n2. 蛋白打发\n3. 小火煎 8 分钟",
+                  tips: "蛋白打发到硬性发泡"),
+            .init(name: "日式豚骨拉面", emoji: "🍜", difficulty: .hard, minutes: 120, category: .noodle,
+                  ingredients: [("拉面", "2 人份"), ("叉烧", "4 片"), ("溏心蛋", "2 枚")],
+                  steps: "1. 豚骨汤熬 90 分钟\n2. 煮面 3 分钟\n3. 摆盘",
+                  tips: ""),
+            .init(name: "冬瓜排骨汤", emoji: "🍲", difficulty: .easy, minutes: 60, category: .soup,
+                  ingredients: [("排骨", "300g"), ("冬瓜", "200g")],
+                  steps: "1. 排骨焯水\n2. 加冬瓜炖 40 分钟",
+                  tips: "冬瓜后放避免煮烂"),
         ]
-        list.forEach { ctx.insert($0) }
+        for r in list {
+            let recipe = CookRecipe(name: r.name, emoji: r.emoji,
+                                    difficulty: r.difficulty, minutes: r.minutes,
+                                    category: r.category,
+                                    steps: r.steps, tips: r.tips)
+            ctx.insert(recipe)
+            for (i, ing) in r.ingredients.enumerated() {
+                let m = CookIngredient(name: ing.name, amount: ing.amount, order: i)
+                m.recipe = recipe
+                ctx.insert(m)
+            }
+        }
     }
 
     private static func seedNotes(_ ctx: ModelContext) {

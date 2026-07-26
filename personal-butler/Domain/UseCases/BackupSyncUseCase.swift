@@ -25,6 +25,7 @@ final class BackupSyncUseCase {
         let otps = (try? context.fetch(FetchDescriptor<OTPAccount>())) ?? []
         let foods = (try? context.fetch(FetchDescriptor<FoodRecord>())) ?? []
         let recipes = (try? context.fetch(FetchDescriptor<CookRecipe>())) ?? []
+        let carts = (try? context.fetch(FetchDescriptor<CookCart>())) ?? []
         let notes = (try? context.fetch(FetchDescriptor<Note>())) ?? []
         let modules = (try? context.fetch(FetchDescriptor<AppModule>())) ?? []
 
@@ -34,7 +35,29 @@ final class BackupSyncUseCase {
                             source: $0.sourceRaw,
                             dueDate: $0.dueDate?.timeIntervalSince1970,
                             isDone: $0.isDone,
-                            createdAt: $0.createdAt.timeIntervalSince1970)
+                            createdAt: $0.createdAt.timeIntervalSince1970,
+                            taskType: $0.taskTypeRaw,
+                            recipeId: $0.recipeId?.uuidString,
+                            expectedIngredients: $0.expectedIngredientsRaw
+                                .split(separator: ",")
+                                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                                .filter { !$0.isEmpty }
+                                .isEmpty
+                                ? nil
+                                : $0.expectedIngredientsRaw
+                                    .split(separator: ",")
+                                    .map { String($0).trimmingCharacters(in: .whitespaces) }
+                                    .filter { !$0.isEmpty },
+                            checkedIngredients: $0.checkedIngredientsRaw
+                                .split(separator: ",")
+                                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                                .filter { !$0.isEmpty }
+                                .isEmpty
+                                ? nil
+                                : $0.checkedIngredientsRaw
+                                    .split(separator: ",")
+                                    .map { String($0).trimmingCharacters(in: .whitespaces) }
+                                    .filter { !$0.isEmpty })
             },
             scheduleList: schedules.map {
                 SyncScheduleDTO(id: $0.id.uuidString, title: $0.title,
@@ -77,8 +100,14 @@ final class BackupSyncUseCase {
             cookRecipeList: recipes.map {
                 SyncRecipeDTO(id: $0.id.uuidString, name: $0.name, emoji: $0.emoji,
                               difficulty: $0.difficultyRaw, minutes: $0.minutes,
-                              category: $0.categoryRaw, ingredients: $0.ingredients,
-                              steps: $0.steps, tips: $0.tips)
+                              category: $0.categoryRaw,
+                              ingredientsLegacyRaw: $0.ingredientsLegacyRaw,
+                              ingredients: $0.ingredients.sorted { $0.order < $1.order }
+                                  .map { SyncIngredientDTO(id: $0.id.uuidString,
+                                                            name: $0.name, amount: $0.amount,
+                                                            order: $0.order) },
+                              steps: $0.steps, tips: $0.tips,
+                              iconImageBase64: $0.iconImage?.base64EncodedString())
             },
             noteList: notes.map {
                 SyncNoteDTO(id: $0.id.uuidString, title: $0.title, content: $0.content,
@@ -90,6 +119,12 @@ final class BackupSyncUseCase {
                 SyncModuleDTO(id: $0.id, name: $0.name, tag: $0.tag,
                               iconSystemName: $0.iconSystemName,
                               order: $0.order, comingSoon: $0.comingSoon)
+            },
+            cartList: carts.map {
+                SyncCartDTO(id: $0.id.uuidString,
+                            recipeId: $0.recipe?.id.uuidString ?? "",
+                            servings: $0.servings,
+                            addedAt: $0.addedAt.timeIntervalSince1970)
             },
             setting: [:]
         )
@@ -278,6 +313,19 @@ final class BackupSyncUseCase {
                 isDone: x.isDone,
                 createdAt: Date(timeIntervalSince1970: x.createdAt)
             )
+            // v4 新字段（Optional，旧服务端可能不带）
+            if let tt = x.taskType, let type = TodoTaskType(rawValue: tt) {
+                m.taskTypeRaw = type.rawValue
+            }
+            if let rid = x.recipeId, let rUUID = UUID(uuidString: rid) {
+                m.recipeId = rUUID
+            }
+            if let exp = x.expectedIngredients {
+                m.expectedIngredientsRaw = exp.joined(separator: ",")
+            }
+            if let chk = x.checkedIngredients {
+                m.checkedIngredientsRaw = chk.joined(separator: ",")
+            }
             context.insert(m)
         }
 
@@ -358,14 +406,38 @@ final class BackupSyncUseCase {
 
         for x in data.cookRecipeList {
             guard let uuid = UUID(uuidString: x.id) else { continue }
+            let iconData: Data? = {
+                guard let b64 = x.iconImageBase64, !b64.isEmpty else { return nil }
+                return Data(base64Encoded: b64)
+            }()
             let m = CookRecipe(
                 id: uuid, name: x.name, emoji: x.emoji,
                 difficulty: CookDifficulty(rawValue: x.difficulty) ?? .easy,
                 minutes: x.minutes,
                 category: CookCategory(rawValue: x.category) ?? .home,
-                ingredients: x.ingredients, steps: x.steps, tips: x.tips
+                ingredientsLegacyRaw: x.ingredientsLegacyRaw,
+                steps: x.steps, tips: x.tips,
+                iconImage: iconData
             )
             context.insert(m)
+            // 重建食材子项
+            for ing in x.ingredients {
+                guard let ingUUID = UUID(uuidString: ing.id) else { continue }
+                let im = CookIngredient(id: ingUUID, name: ing.name,
+                                        amount: ing.amount, order: ing.order)
+                im.recipe = m
+                context.insert(im)
+            }
+            // 重建烹饪车项
+            if let carts = data.cartList {
+                for c in carts where c.recipeId == x.id {
+                    guard let cUUID = UUID(uuidString: c.id) else { continue }
+                    let cm = CookCart(id: cUUID, recipe: m,
+                                      servings: c.servings,
+                                      addedAt: Date(timeIntervalSince1970: c.addedAt))
+                    context.insert(cm)
+                }
+            }
         }
 
         for x in data.noteList {

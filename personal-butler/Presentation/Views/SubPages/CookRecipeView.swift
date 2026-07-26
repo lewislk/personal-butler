@@ -128,8 +128,13 @@ struct RecipeDetailView: View {
                         .foregroundStyle(AppColorTheme.textSub)
                 }
 
-                if !recipe.ingredients.isEmpty {
-                    section(title: "食材", content: recipe.ingredients)
+                if !recipe.ingredientsLegacyRaw.isEmpty || !recipe.ingredients.isEmpty {
+                    let content = recipe.ingredients.isEmpty
+                        ? recipe.ingredientsLegacyRaw
+                        : recipe.ingredients.sorted { $0.order < $1.order }
+                            .map { ing in ing.amount.isEmpty ? ing.name : "\(ing.name)  \(ing.amount)" }
+                            .joined(separator: "\n")
+                    section(title: "食材", content: content)
                 }
                 if !recipe.steps.isEmpty {
                     section(title: "步骤", content: recipe.steps)
@@ -235,7 +240,7 @@ struct CreateCookSheet: View {
                         let r = CookRecipe(name: name.isEmpty ? "未命名" : name,
                                            emoji: emoji, difficulty: difficulty,
                                            minutes: minutes, category: category,
-                                           ingredients: ingredients, steps: steps)
+                                           steps: steps)
                         context.insert(r)
                         try? context.save()
                         dismiss()
