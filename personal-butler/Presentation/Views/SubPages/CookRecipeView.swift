@@ -52,6 +52,9 @@ struct CookRecipeView: View {
         .navigationTitle("烹饪管理")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showCreate) { CookRecipeEditSheet(recipe: nil) }
+        .sheet(item: $editingRecipe) { r in
+            CookRecipeEditSheet(recipe: r)
+        }
     }
 
     private var filtered: [CookRecipe] {
@@ -61,14 +64,19 @@ struct CookRecipeView: View {
 
     private func cookCard(_ r: CookRecipe) -> some View {
         VStack(spacing: 0) {
-            Text(r.emoji)
-                .font(.system(size: 40))
-                .frame(maxWidth: .infinity)
-                .frame(height: 100)
-                .background(
-                    LinearGradient(colors: gradient(for: r.category),
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                )
+            iconArea(r)
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(5)
+                        .background(Circle().fill(AppColorTheme.primary.opacity(0.85)))
+                        .padding(6)
+                }
+                .onTapGesture {
+                    editingRecipe = r
+                }
+                .contentShape(Rectangle())
             VStack(alignment: .leading, spacing: 6) {
                 Text(r.name).font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(AppColorTheme.text)
@@ -94,6 +102,27 @@ struct CookRecipeView: View {
         .shadow(color: AppColorTheme.cardShadow, radius: 4, x: 0, y: 2)
     }
 
+    @ViewBuilder
+    private func iconArea(_ r: CookRecipe) -> some View {
+        ZStack {
+            LinearGradient(colors: gradient(for: r.category),
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            if let data = r.iconImage, let ui = UIImage(data: data) {
+                Image(uiImage: ui)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 100)
+                    .clipped()
+            } else {
+                Text(r.emoji)
+                    .font(.system(size: 40))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 100)
+    }
+
     private func gradient(for cat: CookCategory) -> [Color] {
         switch cat {
         case .home:    return [Color(hex: 0xC8E6C9), Color(hex: 0x81C784)]
@@ -108,18 +137,17 @@ struct CookRecipeView: View {
 struct RecipeDetailView: View {
     let recipe: CookRecipe
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @State private var toastVisible = false
+    @State private var showEdit = false
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(recipe.emoji).font(.system(size: 72))
-                    .frame(maxWidth: .infinity).frame(height: 180)
-                    .background(
-                        LinearGradient(colors: [Color(hex: 0xFFE0B2), Color(hex: 0xFFAB6E)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                iconArea
+                    .onTapGesture { showEdit = true }
+                    .contentShape(Rectangle())
 
                 HStack(spacing: 8) {
                     Text(recipe.difficulty.label)
@@ -134,13 +162,8 @@ struct RecipeDetailView: View {
                         .foregroundStyle(AppColorTheme.textSub)
                 }
 
-                if !recipe.ingredientsLegacyRaw.isEmpty || !recipe.ingredients.isEmpty {
-                    let content = recipe.ingredients.isEmpty
-                        ? recipe.ingredientsLegacyRaw
-                        : recipe.ingredients.sorted { $0.order < $1.order }
-                            .map { ing in ing.amount.isEmpty ? ing.name : "\(ing.name)  \(ing.amount)" }
-                            .joined(separator: "\n")
-                    section(title: "食材", content: content)
+                if !recipe.ingredients.isEmpty || !recipe.ingredientsLegacyRaw.isEmpty {
+                    section(title: "食材", content: ingredientsText)
                 }
                 if !recipe.steps.isEmpty {
                     section(title: "步骤", content: recipe.steps)
@@ -150,15 +173,15 @@ struct RecipeDetailView: View {
                 }
 
                 Button {
-                    let todo = TodoItem(name: "尝试做\(recipe.name)", source: .cook, dueDate: Date())
-                    context.insert(todo)
+                    let cart = CookCart(recipe: recipe, servings: 1)
+                    context.insert(cart)
                     try? context.save()
                     withAnimation { toastVisible = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                         withAnimation { toastVisible = false }
                     }
                 } label: {
-                    Text("加入今日烹饪计划")
+                    Label("加入烹饪车", systemImage: "cart.badge.plus")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity).padding(.vertical, 14)
@@ -172,9 +195,38 @@ struct RecipeDetailView: View {
         .background(Color.white)
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showEdit = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+            }
+        }
+        .sheet(isPresented: $showEdit) {
+            CookRecipeEditSheet(recipe: recipe)
+        }
+        .alert("删除菜谱", isPresented: $showDeleteConfirm) {
+            Button("取消", role: .cancel) { }
+            Button("删除", role: .destructive) {
+                context.delete(recipe)
+                try? context.save()
+                dismiss()
+            }
+        } message: {
+            Text("将删除「\(recipe.name)」及其食材清单，无法撤销。")
+        }
         .overlay(alignment: .bottom) {
             if toastVisible {
-                Text("已加入今日待办")
+                Text("已加入烹饪车")
                     .font(.system(size: 13))
                     .padding(.horizontal, 16).padding(.vertical, 8)
                     .background(RoundedRectangle(cornerRadius: 20).fill(.black.opacity(0.75)))
@@ -183,6 +235,36 @@ struct RecipeDetailView: View {
                     .transition(.opacity)
             }
         }
+    }
+
+    @ViewBuilder
+    private var iconArea: some View {
+        ZStack {
+            LinearGradient(colors: [Color(hex: 0xFFE0B2), Color(hex: 0xFFAB6E)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            if let data = recipe.iconImage, let ui = UIImage(data: data) {
+                Image(uiImage: ui)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 180)
+                    .clipped()
+            } else {
+                Text(recipe.emoji).font(.system(size: 72))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 180)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var ingredientsText: String {
+        if recipe.ingredients.isEmpty {
+            return recipe.ingredientsLegacyRaw
+        }
+        return recipe.ingredients.sorted { $0.order < $1.order }
+            .map { ing in ing.amount.isEmpty ? ing.name : "\(ing.name)  \(ing.amount)" }
+            .joined(separator: "\n")
     }
 
     private func section(title: String, content: String) -> some View {
