@@ -99,6 +99,7 @@ struct PersonalButlerApp: App {
 
         SeedData.ensureSeeded(in: container.mainContext)
         migrateCookIngredients(context: container.mainContext)
+        cleanupFinishedCookTasks(context: container.mainContext)
 
         let elapsed = Date().timeIntervalSince(start)
         let minShow: TimeInterval = 0.5
@@ -129,6 +130,25 @@ struct PersonalButlerApp: App {
                 context.insert(ing)
             }
             r.ingredientsLegacyRaw = ""
+            changed = true
+        }
+        if changed { try? context.save() }
+    }
+
+    /// 清理已完成的烹饪任务（prep / cook）：完成日期早于今天的，启动时删除。
+    /// 判断依据：taskType != .none && isDone && dueDate < 今天起点。
+    /// 当天完成的不删（让用户能在主页看到完成状态）；第二天冷启时清理。
+    @MainActor
+    private func cleanupFinishedCookTasks(context: ModelContext) {
+        let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
+        let todayStart = Date().startOfDay
+        var changed = false
+        for t in todos {
+            guard t.taskType != .none,
+                  t.isDone,
+                  let due = t.dueDate,
+                  due < todayStart else { continue }
+            context.delete(t)
             changed = true
         }
         if changed { try? context.save() }

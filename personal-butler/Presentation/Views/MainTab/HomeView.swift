@@ -64,7 +64,7 @@ struct HomeView: View {
     private var todoCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("近期待办")
+                Text("待办")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(AppColorTheme.text)
                 Spacer()
