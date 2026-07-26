@@ -86,7 +86,7 @@
 				};
 			};
 			buildConfigurationList = F6242A79300D324A007D0488 /* Build configuration list for PBXProject "personal-butler" */;
-			developmentRegion = en;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,

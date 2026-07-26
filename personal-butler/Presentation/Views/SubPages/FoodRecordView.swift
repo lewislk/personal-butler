@@ -9,13 +9,23 @@ import UIKit
 
 struct FoodRecordView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: \FoodRecord.date, order: .reverse) private var list: [FoodRecord]
+    // 排序：分值降序优先，同分按更新时间倒序
+    @Query(sort: [
+        SortDescriptor(\FoodRecord.rating, order: .reverse),
+        SortDescriptor(\FoodRecord.updatedAt, order: .reverse)
+    ]) private var list: [FoodRecord]
     @State private var filterIndex: Int = 0
     @State private var showCreate = false
     @State private var editingRecord: FoodRecord?
     @State private var pendingDelete: FoodRecord?
     /// 当前处于展开态（已左滑露出删除按钮）的记录 id；同一时刻最多一个
     @State private var openSwipeId: UUID?
+
+    // 列表行位置点击 → 弹导航 App 选择面板
+    @State private var showMapsPicker: Bool = false
+    @State private var pickerLat: Double = 0
+    @State private var pickerLng: Double = 0
+    @State private var pickerName: String?
 
     private let categories: [(String, FoodCategory)] = [
         ("全部", .all),
@@ -79,6 +89,10 @@ struct FoodRecordView: View {
         } message: {
             Text(pendingDelete.map { "「\($0.name)」删除后不可恢复。" } ?? "")
         }
+        .mapsNavigatorPicker(isPresented: $showMapsPicker,
+                             latitude: pickerLat,
+                             longitude: pickerLng,
+                             name: pickerName)
     }
 
     private var filtered: [FoodRecord] {
@@ -145,16 +159,18 @@ struct FoodRecordView: View {
                     if f.hasLocation, let loc = f.displayLocation,
                        let lat = f.latitude, let lng = f.longitude {
                         Button {
-                            MapsNavigator.openInMaps(latitude: lat, longitude: lng,
-                                                     name: f.placeName ?? f.address)
+                            pickerLat = lat
+                            pickerLng = lng
+                            pickerName = f.placeName ?? f.address
+                            showMapsPicker = true
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "location.fill")
                                     .font(.system(size: 10))
                                 Text(loc)
                                     .lineLimit(1)
-                                Image(systemName: "arrow.up.forward")
-                                    .font(.system(size: 9))
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 9, weight: .semibold))
                                     .foregroundStyle(AppColorTheme.primary)
                             }
                             .font(.system(size: 12))

@@ -42,27 +42,34 @@ struct POISearchResults: View {
                     .foregroundStyle(AppColorTheme.textSub)
                     .padding(.vertical, 8)
             } else {
-                ForEach(Array(items.prefix(8).enumerated()), id: \.offset) { _, item in
-                    Button {
-                        onPick(Self.mapItemToLocation(item))
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.name ?? "未命名地点")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(AppColorTheme.text)
-                                .lineLimit(1)
-                            Text(Self.formatAddress(item.placemark))
-                                .font(.system(size: 12))
-                                .foregroundStyle(AppColorTheme.textSub)
-                                .lineLimit(1)
+                // 包 ScrollView + 限高，结果过多时可滚动，避免撑破父布局
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(items.prefix(8).enumerated()), id: \.offset) { _, item in
+                            Button {
+                                onPick(Self.mapItemToLocation(item))
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.name ?? "未命名地点")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(AppColorTheme.text)
+                                        .lineLimit(1)
+                                    Text(Self.formatAddress(item.placemark))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(AppColorTheme.textSub)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 8)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Divider().foregroundStyle(Color.black.opacity(0.04))
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    Divider().foregroundStyle(Color.black.opacity(0.04))
                 }
+                // 限高：最多约 5 条可见；超过则内部滚动，第一行始终清晰可见
+                .frame(maxHeight: 280)
             }
         }
         .onChange(of: query) { _, newValue in

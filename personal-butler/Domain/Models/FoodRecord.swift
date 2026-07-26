@@ -31,6 +31,7 @@ final class FoodRecord {
     var tagsRaw: String       // 逗号分隔
     var remark: String
     var date: Date
+    var updatedAt: Date       // 创建/更新时间戳；列表排序用，新增字段带默认值兼容旧数据
     var categoryRaw: String
 
     // 位置字段（全 Optional）
@@ -55,6 +56,7 @@ final class FoodRecord {
         self.tagsRaw = tags.joined(separator: ",")
         self.remark = remark
         self.date = date
+        self.updatedAt = date
         self.categoryRaw = category.rawValue
         self.placeName = placeName
         self.address = address

@@ -104,7 +104,12 @@ struct LocationPickerSheet: View {
                             query = ""
                         }
                         .padding(.horizontal, 12)
+                        .padding(.top, 4)
                         .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .padding(.horizontal, 12)
+                        .padding(.top, 4)
+                        .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 2)
                     }
                     Spacer()
                     bottomCard

@@ -36,6 +36,11 @@ struct EditFoodSheet: View {
     @State private var showChangeActions: Bool = false
     @State private var locationErrorText: String?
     @State private var isFetchingCurrent: Bool = false
+    @State private var showMapsPicker: Bool = false
+
+    // 焦点字段：用于"完成"按钮收起键盘
+    private enum Field: Hashable { case name, tags, remark }
+    @FocusState private var focusedField: Field?
 
     init(record: FoodRecord?) {
         self.record = record
@@ -62,9 +67,25 @@ struct EditFoodSheet: View {
             Form {
                 Section {
                     TextField("店名 / 菜品", text: $name)
+                        .focused($focusedField, equals: .name)
+                        .overlay(alignment: .trailing) {
+                            // 一键清除：仅在输入框有内容时显示
+                            if !name.isEmpty {
+                                Button {
+                                    name = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(AppColorTheme.textSub)
+                                        .padding(.horizontal, 8)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                 }
                 Section("图标") {
                     Button {
+                        focusedField = nil
                         showIconPicker = true
                     } label: {
                         HStack(spacing: 12) {
@@ -77,6 +98,8 @@ struct EditFoodSheet: View {
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(AppColorTheme.textSub)
                         }
+                        // 整个 HStack 矩形任意位置点击都能触发（含 iconPreview / Spacer / chevron）
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -92,6 +115,10 @@ struct EditFoodSheet: View {
                         Text("大排档").tag(FoodCategory.streetfood)
                         Text("日料").tag(FoodCategory.japanese)
                         Text("咖啡").tag(FoodCategory.coffee)
+                    }
+                    .onChange(of: category) { _, _ in
+                        // 切换分类时收起键盘
+                        if focusedField != nil { focusedField = nil }
                     }
                 }
                 Section("位置") {
@@ -123,7 +150,7 @@ struct EditFoodSheet: View {
                         }
 
                         Button {
-                            openInMaps()
+                            showMapsPicker = true
                         } label: {
                             HStack {
                                 Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
@@ -185,7 +212,10 @@ struct EditFoodSheet: View {
                 }
                 Section {
                     TextField("标签（逗号分隔）", text: $tags)
-                    TextField("备注", text: $remark, axis: .vertical).lineLimit(2...4)
+                        .focused($focusedField, equals: .tags)
+                    TextField("备注", text: $remark, axis: .vertical)
+                        .lineLimit(2...4)
+                        .focused($focusedField, equals: .remark)
                 }
             }
             .navigationTitle(isEditing ? "编辑美食" : "新增美食")
@@ -198,7 +228,16 @@ struct EditFoodSheet: View {
                         dismiss()
                     }
                 }
+                // 键盘工具栏：收起键盘按钮，让用户输入完任意字段后能快速收起
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") {
+                        focusedField = nil
+                    }
+                }
             }
+            // 点击表单空白区域收起键盘
+            .scrollDismissesKeyboard(.interactively)
             .sheet(isPresented: $showMapPicker) {
                 LocationPickerSheet(initial: currentSelected) { picked in
                     apply(picked)
@@ -209,6 +248,10 @@ struct EditFoodSheet: View {
                     icon = picked
                 }
             }
+            .mapsNavigatorPicker(isPresented: $showMapsPicker,
+                                 latitude: latitude ?? 0,
+                                 longitude: longitude ?? 0,
+                                 name: placeName ?? address)
             .confirmationDialog("修改位置", isPresented: $showChangeActions, titleVisibility: .visible) {
                 Button("搜索地点") {
                     clearLocation()
@@ -292,11 +335,6 @@ struct EditFoodSheet: View {
         }
     }
 
-    private func openInMaps() {
-        guard let lat = latitude, let lng = longitude else { return }
-        MapsNavigator.openInMaps(latitude: lat, longitude: lng, name: placeName ?? address)
-    }
-
     private func save() {
         let finalName = name.isEmpty ? "未命名" : name
         let tagList = tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -310,6 +348,7 @@ struct EditFoodSheet: View {
             r.address = address
             r.latitude = latitude
             r.longitude = longitude
+            r.updatedAt = .init()
             switch icon {
             case .emoji(let s):
                 r.emoji = s.isEmpty ? "🍽️" : s
@@ -365,12 +404,10 @@ struct EditFoodSheet: View {
         }
     }
 
-    // MARK: - 半星评分（每颗星拆左右两半 tap 区：左半 = +0.5，右半 = +1.0；再点当前值归零）
+    // MARK: - 半星评分（手指在星行上滑动改变评分：0.0..5.0 step 0.5）
     private var starRating: some View {
         HStack(spacing: 10) {
-            ForEach(0..<5, id: \.self) { i in
-                starCell(index: i)
-            }
+            starDragRow
             Spacer()
             Text(rating > 0 ? String(format: "%.1f 星", rating) : "未评分")
                 .font(.system(size: 13))
@@ -379,7 +416,33 @@ struct EditFoodSheet: View {
         .padding(.vertical, 4)
     }
 
-    /// 每颗星拆左右两半 tap 区：左半 = +0.5，右半 = +1.0；再点当前值归零
+    /// 5 颗星的滑动行：DragGesture(minimumDistance: 0) 让按下即更新，滑动连续改变。
+    /// 5 颗 × 40pt + 4 间距 × 10pt = 240pt 总宽；x / 240 × 5 → 0..5，round 到 0.5。
+    private var starDragRow: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            HStack(spacing: 10) {
+                ForEach(0..<5, id: \.self) { i in
+                    starCell(index: i)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        // 滑动评分时收起键盘（从名称字段切过来时）
+                        if focusedField != nil { focusedField = nil }
+                        let raw = v.location.x / w * 5
+                        let stepped = (raw * 2).rounded() / 2
+                        rating = max(0, min(5, stepped))
+                    }
+            )
+        }
+        .frame(height: 40)
+        .frame(width: 240)
+    }
+
     @ViewBuilder
     private func starCell(index i: Int) -> some View {
         let idx = Double(i)
@@ -389,28 +452,10 @@ struct EditFoodSheet: View {
             : "star"
         let filled = rating >= idx + 0.5
 
-        ZStack {
-            Image(systemName: iconName)
-                .font(.system(size: 26))
-                .foregroundStyle(filled ? Color(hex: 0xF5A623) : Color(hex: 0xC7CCD4))
-                .allowsHitTesting(false)
-            HStack(spacing: 0) {
-                Color.clear
-                    .frame(width: 20, height: 40)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        let target = idx + 0.5
-                        rating = (rating == target) ? 0 : target
-                    }
-                Color.clear
-                    .frame(width: 20, height: 40)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        let target = idx + 1.0
-                        rating = (rating == target) ? 0 : target
-                    }
-            }
-        }
-        .frame(width: 40, height: 40)
+        Image(systemName: iconName)
+            .font(.system(size: 26))
+            .foregroundStyle(filled ? Color(hex: 0xF5A623) : Color(hex: 0xC7CCD4))
+            .frame(width: 40, height: 40)
+            .allowsHitTesting(false)
     }
 }
