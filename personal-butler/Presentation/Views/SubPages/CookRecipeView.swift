@@ -477,7 +477,7 @@ struct CookRecipeEditSheet: View {
             r.categoryRaw = category.rawValue
             r.steps = steps
             r.tips = tips
-            for old in r.ingredients { context.delete(old) }
+            for old in Array(r.ingredients) { context.delete(old) }
             for (i, draft) in ingredients.enumerated()
             where !draft.name.trimmingCharacters(in: .whitespaces).isEmpty {
                 let ing = CookIngredient(name: draft.name, amount: draft.amount, order: i)
