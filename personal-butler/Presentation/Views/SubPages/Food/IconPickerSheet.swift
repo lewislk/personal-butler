@@ -20,6 +20,7 @@ struct IconPickerSheet: View {
 
     let initial: FoodIcon
     let onConfirm: (FoodIcon) -> Void
+    let emojiCandidates: [String]
 
     @State private var current: FoodIcon
     @State private var tab: IconTab = .emoji
@@ -31,8 +32,8 @@ struct IconPickerSheet: View {
     // 拍照
     @State private var showCamera: Bool = false
 
-    /// 30 个候选 emoji（覆盖火锅/奶茶/中餐/西餐/日料/咖啡/大排档等主流场景）
-    private static let emojiOptions: [String] = [
+    /// FoodRecord 等模块的默认 emoji 候选（30 个，覆盖火锅/奶茶/中餐/西餐/日料/咖啡/大排档等）
+    static let defaultFoodEmoji: [String] = [
         "🍽️", "🍜", "🍚", "🍛", "🍲", "🍱",
         "🍣", "🍤", "🥟", "🍔", "🍕", "🌮",
         "🥗", "🍖", "🍗", "🥘", "🍢", "🍧",
@@ -40,9 +41,21 @@ struct IconPickerSheet: View {
         "☕️", "🍵", "🧋", "🥤", "🍺", "🍷"
     ]
 
-    init(initial: FoodIcon, onConfirm: @escaping (FoodIcon) -> Void) {
+    /// CookRecipe 模块的菜肴专用 emoji 候选（30 个，偏烹饪场景）
+    static let cookEmoji: [String] = [
+        "🍳", "🥘", "🥗", "🍲", "🍜", "🍚",
+        "🍛", "🍢", "🍣", "🍤", "🥟", "🍝",
+        "🍞", "🥖", "🧀", "🍗", "🍖", "🥩",
+        "🍔", "🍟", "🍕", "🌭", "🌮", "🌯",
+        "🥙", "🥚", "🥞", "🧇", "🥓", "🥪"
+    ]
+
+    init(initial: FoodIcon,
+         onConfirm: @escaping (FoodIcon) -> Void,
+         emojiCandidates: [String] = IconPickerSheet.defaultFoodEmoji) {
         self.initial = initial
         self.onConfirm = onConfirm
+        self.emojiCandidates = emojiCandidates
         _current = State(initialValue: initial)
     }
 
@@ -130,7 +143,7 @@ struct IconPickerSheet: View {
         let cols = Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)
         return ScrollView {
             LazyVGrid(columns: cols, spacing: 8) {
-                ForEach(Self.emojiOptions, id: \.self) { e in
+                ForEach(emojiCandidates, id: \.self) { e in
                     Button {
                         current = .emoji(e)
                     } label: {
