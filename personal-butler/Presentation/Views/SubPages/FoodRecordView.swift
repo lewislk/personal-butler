@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct FoodRecordView: View {
     @Environment(\.modelContext) private var context
@@ -21,6 +22,8 @@ struct FoodRecordView: View {
         ("火锅", .hotpot),
         ("奶茶", .milktea),
         ("中餐", .chinese),
+        ("西餐", .western),
+        ("大排档", .streetfood),
         ("日料", .japanese),
         ("咖啡", .coffee)
     ]
@@ -93,21 +96,36 @@ struct FoodRecordView: View {
             onDelete: { pendingDelete = f }
         ) {
             HStack(alignment: .top, spacing: 12) {
-                Text(f.emoji)
-                    .font(.system(size: 32))
-                    .frame(width: 90, height: 90)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(
-                        LinearGradient(colors: gradient(for: f.category),
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
-                    ))
+                Group {
+                    if let data = f.iconImage, let ui = UIImage(data: data) {
+                        Image(uiImage: ui)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 90, height: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    } else {
+                        Text(f.emoji)
+                            .font(.system(size: 32))
+                            .frame(width: 90, height: 90)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(
+                                LinearGradient(colors: gradient(for: f.category),
+                                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                            ))
+                    }
+                }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(f.name).font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(AppColorTheme.text)
                     HStack(spacing: 2) {
-                        ForEach(0..<5) { i in
-                            Image(systemName: Double(i) < f.rating ? "star.fill" : "star")
+                        ForEach(0..<5, id: \.self) { i in
+                            let idx = Double(i)
+                            let iconName: String =
+                                f.rating >= idx + 1.0 ? "star.fill"
+                                : f.rating >= idx + 0.5 ? "star.leadinghalf.filled"
+                                : "star"
+                            Image(systemName: iconName)
                                 .font(.system(size: 11))
-                                .foregroundStyle(Double(i) < f.rating ? Color(hex: 0xF5A623) : Color(hex: 0xE2E5EA))
+                                .foregroundStyle(f.rating >= idx + 0.5 ? Color(hex: 0xF5A623) : Color(hex: 0xE2E5EA))
                         }
                     }
                     if !f.tags.isEmpty {
@@ -124,15 +142,26 @@ struct FoodRecordView: View {
                         Text(f.remark).font(.system(size: 12)).foregroundStyle(AppColorTheme.textSub)
                             .lineLimit(2)
                     }
-                    if f.hasLocation, let loc = f.displayLocation {
-                        HStack(spacing: 4) {
-                            Image(systemName: "location.fill")
-                                .font(.system(size: 10))
-                            Text(loc)
-                                .lineLimit(1)
+                    if f.hasLocation, let loc = f.displayLocation,
+                       let lat = f.latitude, let lng = f.longitude {
+                        Button {
+                            MapsNavigator.openInMaps(latitude: lat, longitude: lng,
+                                                     name: f.placeName ?? f.address)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "location.fill")
+                                    .font(.system(size: 10))
+                                Text(loc)
+                                    .lineLimit(1)
+                                Image(systemName: "arrow.up.forward")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(AppColorTheme.primary)
+                            }
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppColorTheme.textSub)
+                            .contentShape(Rectangle())
                         }
-                        .font(.system(size: 12))
-                        .foregroundStyle(AppColorTheme.textSub)
+                        .buttonStyle(.plain)
                     }
                 }
                 Spacer()
