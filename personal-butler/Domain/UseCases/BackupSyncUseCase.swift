@@ -16,7 +16,7 @@ final class BackupSyncUseCase {
         let meta = SyncMeta(deviceId: AppSyncConfig.deviceID,
                             syncTimestamp: Int64(Date().timeIntervalSince1970),
                             appVersion: "1.0.0",
-                            dataVersion: 3)
+                            dataVersion: 4)
 
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         let schedules = (try? context.fetch(FetchDescriptor<ScheduleEvent>())) ?? []
@@ -273,6 +273,8 @@ final class BackupSyncUseCase {
         try deleteAll(FetchDescriptor<PasswordAccount>())
         try deleteAll(FetchDescriptor<OTPAccount>())
         try deleteAll(FetchDescriptor<FoodRecord>())
+        try deleteAll(FetchDescriptor<CookIngredient>())
+        try deleteAll(FetchDescriptor<CookCart>())
         try deleteAll(FetchDescriptor<CookRecipe>())
         try deleteAll(FetchDescriptor<Note>())
         try deleteAll(FetchDescriptor<AppModule>())
@@ -386,6 +388,8 @@ final class BackupSyncUseCase {
             context.insert(m)
         }
 
+        // 先建 recipe → ingredients，再单独建 cart（避免 cart 引用未建好的 recipe）
+        var recipeMap: [String: CookRecipe] = [:]
         for x in data.cookRecipeList {
             guard let uuid = UUID(uuidString: x.id) else { continue }
             let iconData: Data? = {
@@ -402,7 +406,7 @@ final class BackupSyncUseCase {
                 iconImage: iconData
             )
             context.insert(m)
-            // 重建食材子项
+            recipeMap[x.id] = m
             for ing in x.ingredients {
                 guard let ingUUID = UUID(uuidString: ing.id) else { continue }
                 let im = CookIngredient(id: ingUUID, name: ing.name,
@@ -410,15 +414,17 @@ final class BackupSyncUseCase {
                 im.recipe = m
                 context.insert(im)
             }
-            // 重建烹饪车项
-            if let carts = data.cartList {
-                for c in carts where c.recipeId == x.id {
-                    guard let cUUID = UUID(uuidString: c.id) else { continue }
-                    let cm = CookCart(id: cUUID, recipe: m,
-                                      servings: c.servings,
-                                      addedAt: Date(timeIntervalSince1970: c.addedAt))
-                    context.insert(cm)
-                }
+        }
+
+        // 重建 CookCart（依赖 recipeMap）
+        if let carts = data.cartList {
+            for c in carts {
+                guard let cUUID = UUID(uuidString: c.id) else { continue }
+                let recipe = recipeMap[c.recipeId]
+                let cm = CookCart(id: cUUID, recipe: recipe,
+                                  servings: c.servings,
+                                  addedAt: Date(timeIntervalSince1970: c.addedAt))
+                context.insert(cm)
             }
         }
 
