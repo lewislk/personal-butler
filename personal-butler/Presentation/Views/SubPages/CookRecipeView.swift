@@ -17,6 +17,7 @@ struct CookRecipeView: View {
     @State private var showCartSheet = false
     @State private var showSubmitConfirm = false
     @State private var toastVisible = false
+    @State private var toastText: String = ""
     @State private var lastSubmittedCount: Int = 0
 
     private let categories: [(String, CookCategory)] = [
@@ -75,10 +76,7 @@ struct CookRecipeView: View {
                 lastSubmittedCount = cartItems.count
                 try? SubmitCookTaskUseCase().execute(context: context)
                 showCartSheet = false
-                withAnimation { toastVisible = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                    withAnimation { toastVisible = false }
-                }
+                showToast("已生成 \(lastSubmittedCount + 1) 条任务")
             }
         } message: {
             if cartItems.count == 1 {
@@ -89,7 +87,7 @@ struct CookRecipeView: View {
         }
         .overlay(alignment: .bottom) {
             if toastVisible {
-                Text("已生成 \(lastSubmittedCount + 1) 条任务")
+                Text(toastText)
                     .font(.system(size: 13))
                     .padding(.horizontal, 16).padding(.vertical, 8)
                     .background(RoundedRectangle(cornerRadius: 20).fill(.black.opacity(0.75)))
@@ -142,8 +140,23 @@ struct CookRecipeView: View {
                 }
                 .contentShape(Rectangle())
             VStack(alignment: .leading, spacing: 6) {
-                Text(r.name).font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(AppColorTheme.text)
+                HStack(spacing: 8) {
+                    Text(r.name).font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppColorTheme.text)
+                        .lineLimit(1)
+                    Spacer()
+                    Button {
+                        addToCart(r)
+                    } label: {
+                        Image(systemName: "cart.badge.plus")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(AppColorTheme.primary)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(Color(hex: 0xEEF3FD)))
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Circle())
+                }
                 HStack(spacing: 6) {
                     Text(r.difficulty.label)
                         .font(.system(size: 11))
@@ -164,6 +177,21 @@ struct CookRecipeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: 0xF0F2F5), lineWidth: 1))
         .shadow(color: AppColorTheme.cardShadow, radius: 4, x: 0, y: 2)
+    }
+
+    private func addToCart(_ r: CookRecipe) {
+        let cart = CookCart(recipe: r, servings: 1)
+        context.insert(cart)
+        try? context.save()
+        showToast("已加入烹饪车")
+    }
+
+    private func showToast(_ text: String) {
+        toastText = text
+        withAnimation { toastVisible = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation { toastVisible = false }
+        }
     }
 
     @ViewBuilder
