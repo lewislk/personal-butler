@@ -6,8 +6,6 @@
 import SwiftUI
 import SwiftData
 
-enum HomeTodoTab: Hashable { case today, week }
-
 struct HomeView: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var router: AppRouter
@@ -15,8 +13,6 @@ struct HomeView: View {
     @Query(sort: \Anniversary.date) private var annis: [Anniversary]
     @Query(sort: \TodoItem.createdAt) private var manualTodos: [TodoItem]
     @Query(sort: \AppModule.order) private var modules: [AppModule]
-
-    @State private var todoTab: HomeTodoTab = .today
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,10 +55,9 @@ struct HomeView: View {
     private var todoCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                MiniSegmentedPill(items: [
-                    (HomeTodoTab.today, "今日待办"),
-                    (HomeTodoTab.week, "近期待办")
-                ], selection: $todoTab)
+                Text("近期待办")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppColorTheme.text)
                 Spacer()
                 Text("\(currentList.count) 项")
                     .font(.system(size: 12, weight: .medium))
@@ -122,70 +117,84 @@ struct HomeView: View {
         let timeLabel: String
         let isUrgent: Bool
         let isDone: Bool
+        let sortDate: Date          // 用于时间排序，纪念日/无期限手动待办用推导时间
         let refSchedule: ScheduleEvent?
         let refManual: TodoItem?
     }
 
+    /// 近期待办：合并今天起未来 7 天窗口内的日程、纪念日、手动/烹饪待办
     private var currentList: [TodoDisplay] {
-        switch todoTab {
-        case .today: return todayList
-        case .week:  return weekList
-        }
-    }
-
-    private var todayList: [TodoDisplay] {
-        let today = Date().startOfDay
-        let end = Date().endOfDay
-        var items: [TodoDisplay] = []
-        // 日程
-        for s in schedules where s.startDate >= today && s.startDate <= end {
-            let hm = s.isAllDay ? "全天" : s.startDate.hourMinute
-            let urgent = !s.isCompleted && s.startDate.timeIntervalSinceNow < 3600 * 4 && s.startDate.timeIntervalSinceNow > 0
-            items.append(.init(id: "sch-\(s.id)", name: s.title, sourceLabel: "日程",
-                               timeLabel: s.isCompleted ? "已完成" : hm,
-                               isUrgent: urgent, isDone: s.isCompleted,
-                               refSchedule: s, refManual: nil))
-        }
-        // 手动/烹饪
-        for t in manualTodos {
-            if let d = t.dueDate, d >= today && d <= end {
-                items.append(.init(id: "todo-\(t.id)", name: t.name,
-                                   sourceLabel: t.source.label,
-                                   timeLabel: t.isDone ? "已完成" : "今晚",
-                                   isUrgent: false, isDone: t.isDone,
-                                   refSchedule: nil, refManual: t))
-            } else if t.dueDate == nil, !t.isDone {
-                items.append(.init(id: "todo-\(t.id)", name: t.name,
-                                   sourceLabel: t.source.label,
-                                   timeLabel: "今日",
-                                   isUrgent: false, isDone: false,
-                                   refSchedule: nil, refManual: t))
-            }
-        }
-        return items.sorted { !$0.isDone && $1.isDone }
-    }
-
-    private var weekList: [TodoDisplay] {
         let now = Date().startOfDay
         let end = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now
+        let todayEnd = Date().endOfDay
         var items: [TodoDisplay] = []
+
+        // 日程：7 天窗口内
         for s in schedules where s.startDate >= now && s.startDate <= end {
-            let label = DateCalculator.relativeLabel(s.startDate)
-            let urgent = s.startDate.timeIntervalSinceNow < 3600 * 6 && s.startDate.timeIntervalSinceNow > 0
+            let isToday = s.startDate <= todayEnd
+            let hm = s.isAllDay ? "全天" : s.startDate.hourMinute
+            let label: String
+            if s.isCompleted {
+                label = "已完成"
+            } else if isToday {
+                label = hm
+            } else {
+                label = DateCalculator.relativeLabel(s.startDate)
+            }
+            let urgent = !s.isCompleted && s.startDate.timeIntervalSinceNow < 3600 * 6 && s.startDate.timeIntervalSinceNow > 0
             items.append(.init(id: "sch-\(s.id)", name: s.title, sourceLabel: "日程",
                                timeLabel: label, isUrgent: urgent, isDone: s.isCompleted,
+                               sortDate: s.startDate,
                                refSchedule: s, refManual: nil))
         }
+
+        // 纪念日：未来 7 天内到期
         for a in annis where a.type == .yearly {
             let days = DateCalculator.daysUntilNextYearly(from: a.date, isLunar: a.isLunar)
             if days <= 7 {
                 let label = days == 0 ? "今天" : "\(days) 天后"
+                let sort = Calendar.current.date(byAdding: .day, value: days, to: now) ?? now
                 items.append(.init(id: "anni-\(a.id)", name: a.name, sourceLabel: "纪念日",
                                    timeLabel: label, isUrgent: days <= 3, isDone: false,
+                                   sortDate: sort,
                                    refSchedule: nil, refManual: nil))
             }
         }
-        return items
+
+        // 手动 / 烹饪待办
+        for t in manualTodos {
+            if let d = t.dueDate {
+                guard d >= now && d <= end else { continue }
+                let label: String
+                if t.isDone {
+                    label = "已完成"
+                } else if d <= todayEnd {
+                    label = "今日"
+                } else {
+                    label = DateCalculator.relativeLabel(d)
+                }
+                items.append(.init(id: "todo-\(t.id)", name: t.name,
+                                   sourceLabel: t.source.label,
+                                   timeLabel: label,
+                                   isUrgent: false, isDone: t.isDone,
+                                   sortDate: d,
+                                   refSchedule: nil, refManual: t))
+            } else if !t.isDone {
+                // 未设截止的手动待办，视作近期，排在今天
+                items.append(.init(id: "todo-\(t.id)", name: t.name,
+                                   sourceLabel: t.source.label,
+                                   timeLabel: "近期",
+                                   isUrgent: false, isDone: false,
+                                   sortDate: now,
+                                   refSchedule: nil, refManual: t))
+            }
+        }
+
+        // 未完成优先；同状态下按时间升序
+        return items.sorted { a, b in
+            if a.isDone != b.isDone { return !a.isDone && b.isDone }
+            return a.sortDate < b.sortDate
+        }
     }
 
     private func toggle(_ todo: TodoDisplay) {
