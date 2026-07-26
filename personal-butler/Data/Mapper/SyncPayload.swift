@@ -72,6 +72,11 @@ struct SyncFoodDTO: Codable {
     var remark: String
     var date: Double
     var category: String
+    // 位置字段（Optional，向下兼容：老服务端/老备份缺字段解析为 nil）
+    var placeName: String?
+    var address: String?
+    var latitude: Double?
+    var longitude: Double?
 }
 
 struct SyncRecipeDTO: Codable {

@@ -16,7 +16,7 @@ final class BackupSyncUseCase {
         let meta = SyncMeta(deviceId: AppSyncConfig.deviceID,
                             syncTimestamp: Int64(Date().timeIntervalSince1970),
                             appVersion: "1.0.0",
-                            dataVersion: 1)
+                            dataVersion: 2)
 
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         let schedules = (try? context.fetch(FetchDescriptor<ScheduleEvent>())) ?? []
@@ -69,7 +69,9 @@ final class BackupSyncUseCase {
             foodRecordList: foods.map {
                 SyncFoodDTO(id: $0.id.uuidString, name: $0.name, emoji: $0.emoji,
                             rating: $0.rating, tags: $0.tags, remark: $0.remark,
-                            date: $0.date.timeIntervalSince1970, category: $0.categoryRaw)
+                            date: $0.date.timeIntervalSince1970, category: $0.categoryRaw,
+                            placeName: $0.placeName, address: $0.address,
+                            latitude: $0.latitude, longitude: $0.longitude)
             },
             cookRecipeList: recipes.map {
                 SyncRecipeDTO(id: $0.id.uuidString, name: $0.name, emoji: $0.emoji,
@@ -340,7 +342,9 @@ final class BackupSyncUseCase {
                 id: uuid, name: x.name, emoji: x.emoji,
                 rating: x.rating, tags: x.tags, remark: x.remark,
                 date: Date(timeIntervalSince1970: x.date),
-                category: FoodCategory(rawValue: x.category) ?? .chinese
+                category: FoodCategory(rawValue: x.category) ?? .chinese,
+                placeName: x.placeName, address: x.address,
+                latitude: x.latitude, longitude: x.longitude
             )
             context.insert(m)
         }
