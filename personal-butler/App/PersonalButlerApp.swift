@@ -40,14 +40,16 @@ struct PersonalButlerApp: App {
 
     /// 冷启初始化：SwiftData 建库/迁移 + SeedData 首启灌数据。
     /// 全部走后台任务，SwiftUI 首帧可以立即渲染 LaunchView。
-    /// 保底展示 0.5s，避免二次启动 bootstrap 秒完导致切换太生硬；
-    /// 更长的保底（走完一个呼吸循环 1.2s）会让日常启动变慢，权衡后不采用。
+    /// 保底展示 0.5s，避免二次启动 bootstrap 秒完导致切换太生硬。
+    ///
+    /// **v2→v3 迁移策略**：
+    /// - 挂载 `FoodRecordMigrationPlan` 尝试正常迁移
+    /// - 失败（rating Int→Double 类型变更无法自动完成）时清库重建
+    ///   （spec 明确"存量数据强转，不考虑迁移"）
     @MainActor
     private func bootstrap() async {
         let start = Date()
 
-        // 1. ModelContainer 初始化（首启最耗时的部分，2~3s 白屏元凶）
-        //    ModelContainer 是 Sendable，可在后台构造。
         let container: ModelContainer = await Task.detached(priority: .userInitiated) {
             let schema = Schema([
                 TodoItem.self,
@@ -62,17 +64,39 @@ struct PersonalButlerApp: App {
                 AppSetting.self
             ])
             let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
+            // 尝试正常迁移
+            if let ok = try? ModelContainer(
+                for: schema,
+                migrationPlan: FoodRecordMigrationPlan.self,
+                configurations: [config]
+            ) {
+                return ok
+            }
+
+            // Fallback：清除本地 store 后重建
+            // 定位默认 SwiftData store 文件并删除；SwiftData 会在下一次
+            // ModelContainer 初始化时新建空库
+            let fm = FileManager.default
+            if let appSupport = try? fm.url(for: .applicationSupportDirectory,
+                                            in: .userDomainMask,
+                                            appropriateFor: nil, create: false) {
+                // SwiftData 默认 store 文件名为 default.store（含 -shm / -wal 附属文件）
+                for name in ["default.store", "default.store-shm", "default.store-wal"] {
+                    let url = appSupport.appendingPathComponent(name)
+                    try? fm.removeItem(at: url)
+                }
+            }
+
             do {
                 return try ModelContainer(for: schema, configurations: [config])
             } catch {
-                fatalError("SwiftData 初始化失败: \(error)")
+                fatalError("SwiftData 初始化失败（清库后重建仍失败）: \(error)")
             }
         }.value
 
-        // 2. SeedData 必须在 MainActor（mainContext 主线程访问约束）
         SeedData.ensureSeeded(in: container.mainContext)
 
-        // 3. 保底最小展示时长
         let elapsed = Date().timeIntervalSince(start)
         let minShow: TimeInterval = 0.5
         if elapsed < minShow {
