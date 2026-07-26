@@ -595,6 +595,7 @@ struct CookRecipeEditSheet: View {
 
 struct CookCartSheet: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @Query(sort: \CookCart.addedAt) private var cartItems: [CookCart]
     @Binding var showSubmitConfirm: Bool
 
@@ -622,7 +623,7 @@ struct CookCartSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") { showSubmitConfirm = false }
+                    Button("关闭") { dismiss() }
                 }
                 ToolbarItem(placement: .bottomBar) {
                     Button("提交烹饪任务") {
