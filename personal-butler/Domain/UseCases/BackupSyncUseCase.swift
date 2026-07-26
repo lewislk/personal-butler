@@ -38,26 +38,8 @@ final class BackupSyncUseCase {
                             createdAt: $0.createdAt.timeIntervalSince1970,
                             taskType: $0.taskTypeRaw,
                             recipeId: $0.recipeId?.uuidString,
-                            expectedIngredients: $0.expectedIngredientsRaw
-                                .split(separator: ",")
-                                .map { String($0).trimmingCharacters(in: .whitespaces) }
-                                .filter { !$0.isEmpty }
-                                .isEmpty
-                                ? nil
-                                : $0.expectedIngredientsRaw
-                                    .split(separator: ",")
-                                    .map { String($0).trimmingCharacters(in: .whitespaces) }
-                                    .filter { !$0.isEmpty },
-                            checkedIngredients: $0.checkedIngredientsRaw
-                                .split(separator: ",")
-                                .map { String($0).trimmingCharacters(in: .whitespaces) }
-                                .filter { !$0.isEmpty }
-                                .isEmpty
-                                ? nil
-                                : $0.checkedIngredientsRaw
-                                    .split(separator: ",")
-                                    .map { String($0).trimmingCharacters(in: .whitespaces) }
-                                    .filter { !$0.isEmpty })
+                            expectedIngredients: $0.expectedIngredients.isEmpty ? nil : $0.expectedIngredients,
+                            checkedIngredients: $0.checkedIngredients.isEmpty ? nil : $0.checkedIngredients)
             },
             scheduleList: schedules.map {
                 SyncScheduleDTO(id: $0.id.uuidString, title: $0.title,
@@ -109,6 +91,12 @@ final class BackupSyncUseCase {
                               steps: $0.steps, tips: $0.tips,
                               iconImageBase64: $0.iconImage?.base64EncodedString())
             },
+            cartList: carts.map {
+                SyncCartDTO(id: $0.id.uuidString,
+                            recipeId: $0.recipe?.id.uuidString ?? "",
+                            servings: $0.servings,
+                            addedAt: $0.addedAt.timeIntervalSince1970)
+            },
             noteList: notes.map {
                 SyncNoteDTO(id: $0.id.uuidString, title: $0.title, content: $0.content,
                             tag: $0.tag,
@@ -119,12 +107,6 @@ final class BackupSyncUseCase {
                 SyncModuleDTO(id: $0.id, name: $0.name, tag: $0.tag,
                               iconSystemName: $0.iconSystemName,
                               order: $0.order, comingSoon: $0.comingSoon)
-            },
-            cartList: carts.map {
-                SyncCartDTO(id: $0.id.uuidString,
-                            recipeId: $0.recipe?.id.uuidString ?? "",
-                            servings: $0.servings,
-                            addedAt: $0.addedAt.timeIntervalSince1970)
             },
             setting: [:]
         )
