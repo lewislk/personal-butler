@@ -25,6 +25,76 @@ enum SeedData {
         try? context.save()
     }
 
+    /// 清理首启灌入的 Demo 数据（isDemo==true 的记录）。
+    ///
+    /// 仅删除 7 类被标记为 isDemo 的实体；AppModule / AppSetting / 用户自添数据保留。
+    /// PasswordAccount / OTPAccount 的 Keychain 项一并清理。
+    ///
+    /// - Returns: 删除的记录条数（不含关联 cascade 的 ingredients / cartItems）。
+    @discardableResult
+    static func clearDemoData(in context: ModelContext) throws -> Int {
+        var deleted = 0
+
+        // Schedule
+        let schedules = try context.fetch(FetchDescriptor<ScheduleEvent>(
+            predicate: #Predicate { $0.isDemo == true }
+        ))
+        schedules.forEach { context.delete($0) }
+        deleted += schedules.count
+
+        // Anniversary
+        let annis = try context.fetch(FetchDescriptor<Anniversary>(
+            predicate: #Predicate { $0.isDemo == true }
+        ))
+        annis.forEach { context.delete($0) }
+        deleted += annis.count
+
+        // Password —— 先收集 Keychain key，delete 后再清理 Keychain
+        let pwds = try context.fetch(FetchDescriptor<PasswordAccount>(
+            predicate: #Predicate { $0.isDemo == true }
+        ))
+        let pwdKeys = pwds.map { $0.passwordKeychainKey }
+        pwds.forEach { context.delete($0) }
+        deleted += pwds.count
+
+        // OTP —— 同上
+        let otps = try context.fetch(FetchDescriptor<OTPAccount>(
+            predicate: #Predicate { $0.isDemo == true }
+        ))
+        let otpKeys = otps.map { $0.secretKeychainKey }
+        otps.forEach { context.delete($0) }
+        deleted += otps.count
+
+        // Food
+        let foods = try context.fetch(FetchDescriptor<FoodRecord>(
+            predicate: #Predicate { $0.isDemo == true }
+        ))
+        foods.forEach { context.delete($0) }
+        deleted += foods.count
+
+        // Recipe —— 关联的 ingredients / cartItems 由 cascade deleteRule 自动清理
+        let recipes = try context.fetch(FetchDescriptor<CookRecipe>(
+            predicate: #Predicate { $0.isDemo == true }
+        ))
+        recipes.forEach { context.delete($0) }
+        deleted += recipes.count
+
+        // Note
+        let notes = try context.fetch(FetchDescriptor<Note>(
+            predicate: #Predicate { $0.isDemo == true }
+        ))
+        notes.forEach { context.delete($0) }
+        deleted += notes.count
+
+        try context.save()
+
+        // Keychain 在 save 成功后再清理（保证失败时旧记录仍可用）
+        pwdKeys.forEach { KeychainManager.delete($0) }
+        otpKeys.forEach { KeychainManager.delete($0) }
+
+        return deleted
+    }
+
     private static func seedAppModules(_ ctx: ModelContext) {
         let list: [AppModule] = [
             .init(id: "schedule",    name: "日程管理", tag: "计划 / 提醒",   iconSystemName: "calendar",              order: 0),
@@ -50,15 +120,15 @@ enum SeedData {
         }
         let list: [ScheduleEvent] = [
             .init(title: "团队晨会", remark: "同步本周迭代进度",
-                  startDate: at(9, 0), reminderMinutesBefore: 15, colorTag: .blue),
+                  startDate: at(9, 0), reminderMinutesBefore: 15, colorTag: .blue, isDemo: true),
             .init(title: "牙医预约", remark: "阳光医院 · 3号诊室",
-                  startDate: at(14, 30), reminderMinutesBefore: 30, colorTag: .green),
+                  startDate: at(14, 30), reminderMinutesBefore: 30, colorTag: .green, isDemo: true),
             .init(title: "需求评审会议", remark: "与产品经理确认下一版需求",
-                  startDate: at(18, 0), reminderMinutesBefore: 30, colorTag: .orange),
+                  startDate: at(18, 0), reminderMinutesBefore: 30, colorTag: .orange, isDemo: true),
             .init(title: "江边跑步", remark: "30 分钟慢跑",
-                  startDate: at(7, 0, day: 1), reminderMinutesBefore: 30, colorTag: .green),
+                  startDate: at(7, 0, day: 1), reminderMinutesBefore: 30, colorTag: .green, isDemo: true),
             .init(title: "项目冲刺日", remark: "专注开发，不排会议",
-                  startDate: at(9, 0, day: 1), isAllDay: true, colorTag: .blue),
+                  startDate: at(9, 0, day: 1), isAllDay: true, colorTag: .blue, isDemo: true),
         ]
         list.forEach { ctx.insert($0) }
     }
@@ -69,14 +139,14 @@ enum SeedData {
             cal.date(from: DateComponents(year: y, month: m, day: d)) ?? Date()
         }
         let list: [Anniversary] = [
-            .init(name: "妈妈生日", date: date(1970, 7, 23), type: .yearly, emoji: "🎂"),
-            .init(name: "结婚周年", date: date(2018, 8, 17), type: .yearly, emoji: "💍"),
-            .init(name: "爸爸生日", date: date(1968, 10, 8), isLunar: true, type: .yearly, emoji: "🎉"),
-            .init(name: "中秋节",   date: date(2026, 9, 25), isLunar: true, type: .yearly, emoji: "🌕"),
-            .init(name: "入职纪念", date: date(2022, 3, 14), type: .cumulative, emoji: "💼"),
-            .init(name: "与她在一起", date: date(2020, 11, 2), type: .cumulative, emoji: "❤️"),
-            .init(name: "戒烟",     date: date(2025, 1, 1),  type: .cumulative, emoji: "🚭"),
-            .init(name: "开始学 SwiftUI", date: date(2026, 5, 10), type: .cumulative, emoji: "📱"),
+            .init(name: "妈妈生日", date: date(1970, 7, 23), type: .yearly, emoji: "🎂", isDemo: true),
+            .init(name: "结婚周年", date: date(2018, 8, 17), type: .yearly, emoji: "💍", isDemo: true),
+            .init(name: "爸爸生日", date: date(1968, 10, 8), isLunar: true, type: .yearly, emoji: "🎉", isDemo: true),
+            .init(name: "中秋节",   date: date(2026, 9, 25), isLunar: true, type: .yearly, emoji: "🌕", isDemo: true),
+            .init(name: "入职纪念", date: date(2022, 3, 14), type: .cumulative, emoji: "💼", isDemo: true),
+            .init(name: "与她在一起", date: date(2020, 11, 2), type: .cumulative, emoji: "❤️", isDemo: true),
+            .init(name: "戒烟",     date: date(2025, 1, 1),  type: .cumulative, emoji: "🚭", isDemo: true),
+            .init(name: "开始学 SwiftUI", date: date(2026, 5, 10), type: .cumulative, emoji: "📱", isDemo: true),
         ]
         list.forEach { ctx.insert($0) }
     }
@@ -93,7 +163,7 @@ enum SeedData {
             KeychainManager.save(s.pwd, for: key)
             let acc = PasswordAccount(platform: s.platform, account: s.account,
                                       typeText: s.type, category: s.cate,
-                                      passwordKeychainKey: key)
+                                      passwordKeychainKey: key, isDemo: true)
             ctx.insert(acc)
         }
     }
@@ -101,11 +171,11 @@ enum SeedData {
     private static func seedFoods(_ ctx: ModelContext) {
         let list: [FoodRecord] = [
             .init(name: "兰州牛肉面", emoji: "🍜", rating: 4,
-                  tags: ["中餐", "午餐"], remark: "牛肉给得多，汤头清亮，会再来", category: .chinese),
+                  tags: ["中餐", "午餐"], remark: "牛肉给得多，汤头清亮，会再来", category: .chinese, isDemo: true),
             .init(name: "Sushi 舞 · 日料", emoji: "🍣", rating: 5,
-                  tags: ["日料", "晚餐", "约会"], remark: "环境安静，三文鱼刺身很新鲜", category: .japanese),
+                  tags: ["日料", "晚餐", "约会"], remark: "环境安静，三文鱼刺身很新鲜", category: .japanese, isDemo: true),
             .init(name: "喜茶 · 芝芝莓莓", emoji: "🧋", rating: 4,
-                  tags: ["奶茶", "下午茶"], remark: "莓果酸甜适口，甜度七分刚好", category: .milktea),
+                  tags: ["奶茶", "下午茶"], remark: "莓果酸甜适口，甜度七分刚好", category: .milktea, isDemo: true),
         ]
         list.forEach { ctx.insert($0) }
     }
@@ -147,7 +217,7 @@ enum SeedData {
             let recipe = CookRecipe(name: r.name, emoji: r.emoji,
                                     difficulty: r.difficulty, minutes: r.minutes,
                                     category: r.category,
-                                    steps: r.steps, tips: r.tips)
+                                    steps: r.steps, tips: r.tips, isDemo: true)
             ctx.insert(recipe)
             for (i, ing) in r.ingredients.enumerated() {
                 let m = CookIngredient(name: ing.name, amount: ing.amount, order: i)
@@ -160,9 +230,9 @@ enum SeedData {
     private static func seedNotes(_ ctx: ModelContext) {
         let list: [Note] = [
             .init(content: "主页需要做「今日待办 / 近期待办」的分段切换……",
-                  tag: "灵感"),
+                  tag: "灵感", isDemo: true),
             .init(content: "「简单是最终极的复杂」— 达芬奇",
-                  tag: "摘录"),
+                  tag: "摘录", isDemo: true),
         ]
         list.forEach { ctx.insert($0) }
     }
@@ -177,7 +247,7 @@ enum SeedData {
             let key = "otp." + UUID().uuidString
             KeychainManager.save(secret, for: key)
             let acc = OTPAccount(issuer: issuer, accountName: name,
-                                 secretKeychainKey: key)
+                                 secretKeychainKey: key, isDemo: true)
             ctx.insert(acc)
         }
     }

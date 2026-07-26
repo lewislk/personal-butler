@@ -36,6 +36,8 @@ struct SyncScheduleDTO: Codable {
     var reminderMinutesBefore: Int?
     var colorTag: String
     var isCompleted: Bool
+    // v5 新增：标记首启 Demo 数据，客户端「清理Demo数据」按钮按此过滤
+    var isDemo: Bool?
 }
 
 struct SyncAnniDTO: Codable {
@@ -46,6 +48,8 @@ struct SyncAnniDTO: Codable {
     var type: String
     var reminderDaysBefore: Int?
     var emoji: String
+    // v5 新增
+    var isDemo: Bool?
 }
 
 struct SyncPasswordDTO: Codable {
@@ -56,6 +60,8 @@ struct SyncPasswordDTO: Codable {
     var category: String
     var passwordPlain: String     // 同步时随包携带明文（仅局域网内网）
     var updatedAt: Double
+    // v5 新增
+    var isDemo: Bool?
 }
 
 struct SyncOTPDTO: Codable {
@@ -66,6 +72,8 @@ struct SyncOTPDTO: Codable {
     var period: Int
     var digits: Int
     var order: Int
+    // v5 新增
+    var isDemo: Bool?
 }
 
 struct SyncFoodDTO: Codable {
@@ -84,6 +92,8 @@ struct SyncFoodDTO: Codable {
     var longitude: Double?
     // v3 图片图标（base64 编码的 JPEG bytes；nil = 未设置）
     var iconImageBase64: String?
+    // v5 新增
+    var isDemo: Bool?
 }
 
 struct SyncIngredientDTO: Codable {
@@ -112,6 +122,8 @@ struct SyncRecipeDTO: Codable {
     var steps: String
     var tips: String
     var iconImageBase64: String?
+    // v5 新增
+    var isDemo: Bool?
 }
 
 struct SyncNoteDTO: Codable {
@@ -121,6 +133,8 @@ struct SyncNoteDTO: Codable {
     var tag: String
     var createdAt: Double
     var updatedAt: Double
+    // v5 新增
+    var isDemo: Bool?
 }
 
 struct SyncModuleDTO: Codable {

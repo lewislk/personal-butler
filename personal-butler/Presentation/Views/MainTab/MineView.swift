@@ -15,6 +15,7 @@ struct MineView: View {
     @State private var showSyncSheet = false
     @State private var cacheSize: String = "2.3 MB"
     @State private var toast: String?
+    @State private var showClearDemoConfirm = false
 
     private var setting: AppSetting? { settings.first }
 
@@ -29,6 +30,12 @@ struct MineView: View {
         }
         .sheet(isPresented: $showSyncSheet) {
             LanSyncView()
+        }
+        .alert("清理Demo数据", isPresented: $showClearDemoConfirm) {
+            Button("取消", role: .cancel) { }
+            Button("清理", role: .destructive) { clearDemoData() }
+        } message: {
+            Text("将删除首启灌入的所有示例数据（日程 / 纪念日 / 密码 / 美食 / 菜谱 / 笔记 / 2FA），你自添的数据不受影响。此操作不可恢复。")
         }
         .overlay(alignment: .bottom) {
             if let t = toast {
@@ -93,6 +100,10 @@ struct MineView: View {
                 cacheSize = "0 KB"
                 showToast("已清除")
             }
+            Divider().padding(.leading, 44)
+            row(icon: "sparkles", label: "清理Demo数据", value: "示例数据") {
+                showClearDemoConfirm = true
+            }
         }
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -145,6 +156,17 @@ struct MineView: View {
         withAnimation { toast = text }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             withAnimation { toast = nil }
+        }
+    }
+
+    /// 清理首启灌入的 Demo 数据（isDemo==true 的记录）。
+    /// 用户自添数据保留；失败时 toast 提示错误。
+    private func clearDemoData() {
+        do {
+            let count = try SeedData.clearDemoData(in: context)
+            showToast(count > 0 ? "已清理 \(count) 条Demo数据" : "没有可清理的Demo数据")
+        } catch {
+            showToast("清理失败：\(error.localizedDescription)")
         }
     }
 }

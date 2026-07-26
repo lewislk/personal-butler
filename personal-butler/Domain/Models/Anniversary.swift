@@ -26,10 +26,12 @@ final class Anniversary {
     var typeRaw: String
     var reminderDaysBefore: Int?
     var emoji: String
+    /// 是否为首次安装时灌入的 Demo 数据；用户自添的为 false。
+    var isDemo: Bool
 
     init(id: UUID = UUID(), name: String, date: Date, isLunar: Bool = false,
          type: AnniversaryType = .yearly, reminderDaysBefore: Int? = 7,
-         emoji: String = "🎉") {
+         emoji: String = "🎉", isDemo: Bool = false) {
         self.id = id
         self.name = name
         self.date = date
@@ -37,6 +39,7 @@ final class Anniversary {
         self.typeRaw = type.rawValue
         self.reminderDaysBefore = reminderDaysBefore
         self.emoji = emoji
+        self.isDemo = isDemo
     }
 
     var type: AnniversaryType { AnniversaryType(rawValue: typeRaw) ?? .yearly }

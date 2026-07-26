@@ -34,6 +34,9 @@ type SyncScheduleDTO struct {
 	ReminderMinutesBefore *int     `json:"reminderMinutesBefore"`
 	ColorTag              string   `json:"colorTag"`
 	IsCompleted           bool     `json:"isCompleted"`
+	// v5 新增：标记首启 Demo 数据；客户端「清理Demo数据」按钮按此过滤。
+	// 用 *bool 指针对齐 iOS Optional，旧客户端上传不带此字段时为 nil。
+	IsDemo *bool `json:"isDemo,omitempty"`
 }
 
 type SyncAnniDTO struct {
@@ -44,6 +47,8 @@ type SyncAnniDTO struct {
 	Type               string  `json:"type"`
 	ReminderDaysBefore *int    `json:"reminderDaysBefore"`
 	Emoji              string  `json:"emoji"`
+	// v5 新增
+	IsDemo *bool `json:"isDemo,omitempty"`
 }
 
 type SyncPasswordDTO struct {
@@ -54,6 +59,8 @@ type SyncPasswordDTO struct {
 	Category      string  `json:"category"`
 	PasswordPlain string  `json:"passwordPlain"`
 	UpdatedAt     float64 `json:"updatedAt"`
+	// v5 新增
+	IsDemo *bool `json:"isDemo,omitempty"`
 }
 
 type SyncOTPDTO struct {
@@ -64,6 +71,8 @@ type SyncOTPDTO struct {
 	Period      int    `json:"period"`
 	Digits      int    `json:"digits"`
 	Order       int    `json:"order"`
+	// v5 新增
+	IsDemo *bool `json:"isDemo,omitempty"`
 }
 
 type SyncFoodDTO struct {
@@ -82,6 +91,8 @@ type SyncFoodDTO struct {
 	Longitude *float64 `json:"longitude,omitempty"`
 	// v3 图片图标（base64 编码的 JPEG bytes；nil = 未设置）
 	IconImageBase64 *string `json:"iconImageBase64,omitempty"`
+	// v5 新增
+	IsDemo *bool `json:"isDemo,omitempty"`
 }
 
 // SyncIngredientDTO v4 新增：菜谱结构化食材子项
@@ -114,6 +125,8 @@ type SyncRecipeDTO struct {
 	Tips                 string                `json:"tips"`
 	// v4 新增：菜谱图片图标（base64 编码的 JPEG bytes）
 	IconImageBase64 *string `json:"iconImageBase64,omitempty"`
+	// v5 新增
+	IsDemo *bool `json:"isDemo,omitempty"`
 }
 
 type SyncNoteDTO struct {
@@ -123,6 +136,8 @@ type SyncNoteDTO struct {
 	Tag       string  `json:"tag"`
 	CreatedAt float64 `json:"createdAt"`
 	UpdatedAt float64 `json:"updatedAt"`
+	// v5 新增
+	IsDemo *bool `json:"isDemo,omitempty"`
 }
 
 type SyncModuleDTO struct {

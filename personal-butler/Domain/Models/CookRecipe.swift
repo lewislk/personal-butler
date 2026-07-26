@@ -52,6 +52,10 @@ final class CookRecipe {
     /// 图片图标（JPEG 二进制，与 FoodRecord 一致）
     @Attribute(.externalStorage) var iconImage: Data?
 
+    /// 是否为首次安装时灌入的 Demo 数据；用户自添的为 false。
+    /// 删除 isDemo==true 的 recipe 时，关联的 ingredients / cartItems 由 cascade deleteRule 自动清理。
+    var isDemo: Bool
+
     init(id: UUID = UUID(), name: String, emoji: String = "🍲",
          difficulty: CookDifficulty = .easy, minutes: Int = 30,
          category: CookCategory = .home,
@@ -59,7 +63,7 @@ final class CookRecipe {
          ingredients: [CookIngredient] = [],
          cartItems: [CookCart] = [],
          steps: String = "", tips: String = "",
-         iconImage: Data? = nil) {
+         iconImage: Data? = nil, isDemo: Bool = false) {
         self.id = id
         self.name = name
         self.emoji = emoji
@@ -72,6 +76,7 @@ final class CookRecipe {
         self.steps = steps
         self.tips = tips
         self.iconImage = iconImage
+        self.isDemo = isDemo
     }
 
     var difficulty: CookDifficulty { CookDifficulty(rawValue: difficultyRaw) ?? .easy }

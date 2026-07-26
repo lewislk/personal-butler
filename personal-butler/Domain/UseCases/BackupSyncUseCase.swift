@@ -16,7 +16,7 @@ final class BackupSyncUseCase {
         let meta = SyncMeta(deviceId: AppSyncConfig.deviceID,
                             syncTimestamp: Int64(Date().timeIntervalSince1970),
                             appVersion: "1.0.0",
-                            dataVersion: 4)
+                            dataVersion: 5)
 
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         let schedules = (try? context.fetch(FetchDescriptor<ScheduleEvent>())) ?? []
@@ -49,27 +49,30 @@ final class BackupSyncUseCase {
                                 isAllDay: $0.isAllDay,
                                 reminderMinutesBefore: $0.reminderMinutesBefore,
                                 colorTag: $0.colorTagRaw,
-                                isCompleted: $0.isCompleted)
+                                isCompleted: $0.isCompleted,
+                                isDemo: $0.isDemo)
             },
             anniversaryList: annis.map {
                 SyncAnniDTO(id: $0.id.uuidString, name: $0.name,
                             date: $0.date.timeIntervalSince1970,
                             isLunar: $0.isLunar, type: $0.typeRaw,
                             reminderDaysBefore: $0.reminderDaysBefore,
-                            emoji: $0.emoji)
+                            emoji: $0.emoji, isDemo: $0.isDemo)
             },
             passwordList: pwds.map {
                 SyncPasswordDTO(id: $0.id.uuidString, platform: $0.platform,
                                 account: $0.account, typeText: $0.typeText,
                                 category: $0.categoryRaw,
                                 passwordPlain: KeychainManager.load($0.passwordKeychainKey) ?? "",
-                                updatedAt: $0.updatedAt.timeIntervalSince1970)
+                                updatedAt: $0.updatedAt.timeIntervalSince1970,
+                                isDemo: $0.isDemo)
             },
             otpList: otps.map {
                 SyncOTPDTO(id: $0.id.uuidString, issuer: $0.issuer,
                            accountName: $0.accountName,
                            secretPlain: KeychainManager.load($0.secretKeychainKey) ?? "",
-                           period: $0.period, digits: $0.digits, order: $0.order)
+                           period: $0.period, digits: $0.digits, order: $0.order,
+                           isDemo: $0.isDemo)
             },
             foodRecordList: foods.map {
                 SyncFoodDTO(id: $0.id.uuidString, name: $0.name, emoji: $0.emoji,
@@ -77,7 +80,8 @@ final class BackupSyncUseCase {
                             date: $0.date.timeIntervalSince1970, category: $0.categoryRaw,
                             placeName: $0.placeName, address: $0.address,
                             latitude: $0.latitude, longitude: $0.longitude,
-                            iconImageBase64: $0.iconImage?.base64EncodedString())
+                            iconImageBase64: $0.iconImage?.base64EncodedString(),
+                            isDemo: $0.isDemo)
             },
             cookRecipeList: recipes.map {
                 SyncRecipeDTO(id: $0.id.uuidString, name: $0.name, emoji: $0.emoji,
@@ -89,7 +93,8 @@ final class BackupSyncUseCase {
                                                             name: $0.name, amount: $0.amount,
                                                             order: $0.order) },
                               steps: $0.steps, tips: $0.tips,
-                              iconImageBase64: $0.iconImage?.base64EncodedString())
+                              iconImageBase64: $0.iconImage?.base64EncodedString(),
+                              isDemo: $0.isDemo)
             },
             cartList: carts.map {
                 SyncCartDTO(id: $0.id.uuidString,
@@ -101,7 +106,8 @@ final class BackupSyncUseCase {
                 SyncNoteDTO(id: $0.id.uuidString, title: $0.title, content: $0.content,
                             tag: $0.tag,
                             createdAt: $0.createdAt.timeIntervalSince1970,
-                            updatedAt: $0.updatedAt.timeIntervalSince1970)
+                            updatedAt: $0.updatedAt.timeIntervalSince1970,
+                            isDemo: $0.isDemo)
             },
             appModuleList: modules.map {
                 SyncModuleDTO(id: $0.id, name: $0.name, tag: $0.tag,
@@ -382,7 +388,8 @@ final class BackupSyncUseCase {
                 isAllDay: x.isAllDay,
                 reminderMinutesBefore: x.reminderMinutesBefore,
                 colorTag: ScheduleColorTag(rawValue: x.colorTag) ?? .blue,
-                isCompleted: x.isCompleted
+                isCompleted: x.isCompleted,
+                isDemo: x.isDemo ?? false
             )
             context.insert(m)
         }
@@ -395,7 +402,7 @@ final class BackupSyncUseCase {
                 isLunar: x.isLunar,
                 type: AnniversaryType(rawValue: x.type) ?? .yearly,
                 reminderDaysBefore: x.reminderDaysBefore,
-                emoji: x.emoji
+                emoji: x.emoji, isDemo: x.isDemo ?? false
             )
             context.insert(m)
         }
@@ -411,7 +418,8 @@ final class BackupSyncUseCase {
                 typeText: x.typeText,
                 category: PasswordCategory(rawValue: x.category) ?? .custom,
                 passwordKeychainKey: key,
-                updatedAt: Date(timeIntervalSince1970: x.updatedAt)
+                updatedAt: Date(timeIntervalSince1970: x.updatedAt),
+                isDemo: x.isDemo ?? false
             )
             context.insert(m)
         }
@@ -424,7 +432,8 @@ final class BackupSyncUseCase {
             let m = OTPAccount(
                 id: uuid, issuer: x.issuer, accountName: x.accountName,
                 secretKeychainKey: key,
-                period: x.period, digits: x.digits, order: x.order
+                period: x.period, digits: x.digits, order: x.order,
+                isDemo: x.isDemo ?? false
             )
             context.insert(m)
         }
@@ -443,7 +452,7 @@ final class BackupSyncUseCase {
                 category: FoodCategory(rawValue: x.category) ?? .chinese,
                 placeName: x.placeName, address: x.address,
                 latitude: x.latitude, longitude: x.longitude,
-                iconImage: iconData
+                iconImage: iconData, isDemo: x.isDemo ?? false
             )
             context.insert(m)
         }
@@ -463,7 +472,7 @@ final class BackupSyncUseCase {
                 category: CookCategory(rawValue: x.category) ?? .home,
                 ingredientsLegacyRaw: x.ingredientsLegacyRaw,
                 steps: x.steps, tips: x.tips,
-                iconImage: iconData
+                iconImage: iconData, isDemo: x.isDemo ?? false
             )
             context.insert(m)
             recipeMap[x.id] = m
@@ -493,7 +502,8 @@ final class BackupSyncUseCase {
             let m = Note(
                 id: uuid, title: x.title, content: x.content, tag: x.tag,
                 createdAt: Date(timeIntervalSince1970: x.createdAt),
-                updatedAt: Date(timeIntervalSince1970: x.updatedAt)
+                updatedAt: Date(timeIntervalSince1970: x.updatedAt),
+                isDemo: x.isDemo ?? false
             )
             context.insert(m)
         }

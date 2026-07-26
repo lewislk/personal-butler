@@ -84,11 +84,27 @@ sudo firewall-cmd --permanent --add-port=8090/tcp && sudo firewall-cmd --reload
 
 **3. 配置免密 SSH 登录（强烈推荐）**
 
-在本地执行：
+方式一：`ssh-copy-id` 推送公钥（最简单）
 
 ```bash
 ssh-copy-id -p <端口> <user>@<host>
 # 验证：ssh -p <端口> <user>@<host> 'docker version'  应该不需要密码且能看到 docker 版本
+```
+
+方式二：`~/.ssh/config` 别名（推荐，deploy.sh 原生支持）
+
+把主机 / 用户 / 端口 / 密钥都写进 `~/.ssh/config`，之后 `ssh myserver` 即可免密登录，deploy.sh 也会自动读取这套配置。
+
+```bash
+# ~/.ssh/config
+Host myserver
+    HostName 192.168.1.10
+    User root
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+
+# 验证：ssh myserver 'docker version'  应该不需要密码且能看到 docker 版本
 ```
 
 ### 一键部署
@@ -96,18 +112,21 @@ ssh-copy-id -p <端口> <user>@<host>
 在本地仓库 `server/` 目录下执行：
 
 ```bash
-# 首次部署：自动生成随机 SYNC_TOKEN / MYSQL_ROOT_PASSWORD 并写入远程 .env
+# 用 ~/.ssh/config 别名（推荐，端口/密钥全部自动读取）
+./deploy.sh myserver --init
+
+# 或传统的 user@host 形式（端口走 ~/.ssh/config 或默认 22）
 ./deploy.sh root@192.168.1.10 --init
 
 # 后续更新代码：复用远程 .env，只 rebuild server 镜像
-./deploy.sh root@192.168.1.10
+./deploy.sh myserver
 ```
 
 可选环境变量：
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `SSH_PORT` | `22` | SSH 端口 |
+| `SSH_PORT` | 空 | SSH 端口。**留空时走 `~/.ssh/config`**（推荐密钥免密登录）；显式设置才用 `-p` 覆盖 |
 | `REMOTE_DIR` | `~/personal-butler` | 远程部署目录 |
 | `PB_SYNC_TOKEN` | 随机 16 字节 hex | 仅 `--init` 时生效，自定义 token |
 | `PB_MYSQL_PASSWORD` | 随机 16 字节 hex | 仅 `--init` 时生效，自定义 MySQL 密码 |
@@ -116,7 +135,10 @@ ssh-copy-id -p <端口> <user>@<host>
 示例：
 
 ```bash
-# 自定义 SSH 端口
+# 用 ~/.ssh/config 别名（端口/密钥/用户都从 config 读）
+./deploy.sh myserver --init
+
+# 自定义 SSH 端口（覆盖 config 中的 Port）
 SSH_PORT=2222 ./deploy.sh deploy@host.example.com --init
 
 # 自定义远程目录
@@ -223,17 +245,29 @@ Docker Compose 额外变量（见 `.env.example`）：
 - **时间戳统一 DOUBLE**：与 Swift `TimeInterval` (unix seconds since 1970, `Double`) 对齐，避免时区与精度歧义。
 - **schema 手动维护**：不启用 GORM `AutoMigrate`；改字段前请先改 `sql/init.sql` 并递增 `SyncMeta.dataVersion`。
 
-### 当前 schema 版本（dataVersion = 4，对齐 iOS 端 `SyncPayload.swift`）
+### 当前 schema 版本（dataVersion = 5，对齐 iOS 端 `SyncPayload.swift`）
 
-| 实体 | 表 | 关键字段（v4 新增 / 变更） |
+| 实体 | 表 | 关键字段（最新变更） |
 |------|----|----------------------------|
 | Todo | `todo` | v4 新增 `task_type` / `recipe_id` / `expected_ingredients` / `checked_ingredients`（NULL 表示未设置） |
-| Food | `food` | v2 新增 `place_name` / `address` / `latitude` / `longitude`；v3 `rating` INT → DOUBLE，新增 `icon_image_base64` |
-| CookRecipe | `cook_recipe` | v4 移除旧 `ingredients` 文本字段，新增 `ingredients_legacy_raw` / `icon_image_base64`；结构化食材拆到 `cook_ingredient` 子表 |
+| Schedule | `schedule` | **v5 新增 `is_demo`**（TINYINT(1) NOT NULL DEFAULT 0） |
+| Anniversary | `anniversary` | **v5 新增 `is_demo`** |
+| Password | `password` | **v5 新增 `is_demo`** |
+| OTP | `otp` | **v5 新增 `is_demo`** |
+| Food | `food` | v2 新增 `place_name` / `address` / `latitude` / `longitude`；v3 `rating` INT → DOUBLE，新增 `icon_image_base64`；**v5 新增 `is_demo`** |
+| CookRecipe | `cook_recipe` | v4 移除旧 `ingredients` 文本字段，新增 `ingredients_legacy_raw` / `icon_image_base64`；结构化食材拆到 `cook_ingredient` 子表；**v5 新增 `is_demo`** |
 | CookIngredient | `cook_ingredient`（v4 新增） | 主键 `(device_id, id)`，`recipe_id` 关联同 device 下的 `cook_recipe.id`，不走外键约束 |
 | CookCart | `cook_cart`（v4 新增） | 主键 `(device_id, id)`，`recipe_id` 关联同 device 下的 `cook_recipe.id` |
+| Note | `note` | **v5 新增 `is_demo`** |
 
-**升级提示**：本次 schema 与 v1 不兼容（旧 `cook_recipe.ingredients` 文本字段被移除，`food.rating` 类型变更），需要先 `DROP DATABASE personal_butler` 或手动 `mysql -uroot -p < sql/init.sql` 重建全部业务表。已有 v1 备份需用对应旧版服务端恢复，新服务端只接受 v4 payload。
+**v5 变更说明**：为支持 iOS 客户端「我的 → 清理Demo数据」按钮按需删除首启灌入的示例数据，对 `schedule` / `anniversary` / `password` / `otp` / `food` / `cook_recipe` / `note` 7 张表新增 `is_demo` 列。
+
+- iOS 端 `SeedData` 灌入的示例数据 `is_demo=1`，用户自添数据 `is_demo=0`
+- 服务端 DTO 对应字段为 `IsDemo *bool`（指针，对齐 iOS Optional；旧客户端不带此字段时为 `nil`，落库按 `false` 处理）
+- Web 表单（`/api/recipes/*`）创建的菜谱 `is_demo=0`（用户自添语义）
+- `cook_ingredient` / `cook_cart` / `todo` / `app_module` / `app_setting` 不参与 demo 清理，未加 `is_demo` 列
+
+**升级提示**：v5 与 v1 不兼容（旧 `cook_recipe.ingredients` 文本字段被移除，`food.rating` 类型变更，且 7 张表新增 `is_demo` 列），需要先 `DROP DATABASE personal_butler` 或手动 `mysql -uroot -p < sql/init.sql` 重建全部业务表。已有 v1/v4 备份需用对应旧版服务端恢复，新服务端只接受 v5 payload。
 
 ## curl 自测
 
@@ -241,7 +275,7 @@ Docker Compose 额外变量（见 `.env.example`）：
 # 生成一个最小 payload（省略了业务字段）
 cat > /tmp/payload.json <<'JSON'
 {
-  "syncMeta": {"deviceId":"dev-1","syncTimestamp":1700000000,"appVersion":"1.0.0","dataVersion":4},
+  "syncMeta": {"deviceId":"dev-1","syncTimestamp":1700000000,"appVersion":"1.0.0","dataVersion":5},
   "data": {
     "todoList":[{"id":"t1","name":"测试","source":"manual","dueDate":null,"isDone":false,"createdAt":1700000000,"taskType":"none"}],
     "scheduleList":[], "anniversaryList":[], "passwordList":[], "otpList":[],
@@ -298,7 +332,7 @@ http://<host>:8090/web
 | PUT | `/api/recipes/:id` | 全量更新菜谱 + 替换 ingredients |
 | DELETE | `/api/recipes/:id` | 删除菜谱及其 ingredients |
 
-每次写入都会 upsert `sync_meta` 行（`appVersion="web-form"`、`dataVersion=4`、`syncTimestamp=now`），保证 iOS 客户端即使从未 upload 过也能直接 download 到 Web 录入的数据。
+每次写入都会 upsert `sync_meta` 行（`appVersion="web-form"`、`dataVersion=5`、`syncTimestamp=now`），保证 iOS 客户端即使从未 upload 过也能直接 download 到 Web 录入的数据。Web 表单创建的菜谱 `is_demo=0`（用户自添语义），不会被 iOS 端「清理Demo数据」按钮误删。
 
 ### 推荐使用流程
 

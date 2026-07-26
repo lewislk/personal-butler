@@ -4,10 +4,16 @@
 # ============================================================
 # 用法：
 #   ./deploy.sh user@host                       # 默认参数部署
+#   ./deploy.sh myserver                        # 使用 ~/.ssh/config 中配置的别名（免密/端口/密钥自动读取）
 #   ./deploy.sh user@host --init               # 首次部署：远程生成 .env
-#   SSH_PORT=2222 ./deploy.sh user@host         # 自定义 SSH 端口
+#   SSH_PORT=2222 ./deploy.sh user@host         # 自定义 SSH 端口（不设则走 ~/.ssh/config）
 #   REMOTE_DIR=/opt/pb ./deploy.sh user@host    # 自定义远程目录
 #   PB_SYNC_TOKEN=xxx ./deploy.sh user@host    # 直接传入 token（不交互）
+#
+# SSH 连接说明：
+#   - 不显式设置 SSH_PORT 时，脚本不会传 -p，ssh / rsync 会自动读取 ~/.ssh/config
+#     （Host / HostName / User / Port / IdentityFile 等都生效），适合密钥免密登录。
+#   - 显式 SSH_PORT=2222 时，会强制用 -p 2222 覆盖配置中的端口。
 #
 # 工作流（本地执行 → 远程执行）：
 #   1. 本地：rsync 同步 server/* 到远程 REMOTE_DIR（排除本地 .env / 构建产物）
@@ -42,12 +48,18 @@ for arg in "$@"; do
   esac
 done
 
-[[ -n "$SSH_HOST" ]] || die "用法：$0 <user@host> [--init]
+[[ -n "$SSH_HOST" ]] || die "用法：$0 <user@host | ssh别名> [--init]
 示例：
   $0 root@192.168.1.10 --init
+  $0 myserver              # myserver 是 ~/.ssh/config 中的别名
   SSH_PORT=2222 $0 deploy@host"
 
-SSH_PORT="${SSH_PORT:-22}"
+# SSH_PORT 留空=走 ~/.ssh/config（推荐密钥免密登录）；显式设置才传 -p 覆盖
+SSH_PORT="${SSH_PORT:-}"
+SSH_PORT_ARG=()
+[[ -n "$SSH_PORT" ]] && SSH_PORT_ARG=(-p "$SSH_PORT")
+RSYNC_SSH="ssh"
+[[ -n "$SSH_PORT" ]] && RSYNC_SSH="ssh -p $SSH_PORT"
 REMOTE_DIR="${REMOTE_DIR:-~/personal-butler}"
 # 同步给远程 .env 用的 token（不设则交互式问或随机生成）
 PB_SYNC_TOKEN="${PB_SYNC_TOKEN:-}"
@@ -62,13 +74,17 @@ command -v ssh >/dev/null   || die "本地缺少 ssh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$SCRIPT_DIR/Dockerfile" ]] || die "未找到 $SCRIPT_DIR/Dockerfile，请在 server/ 目录下运行本脚本"
 
-log "目标主机：$SSH_HOST（端口 $SSH_PORT）"
+if [[ -n "$SSH_PORT" ]]; then
+  log "目标主机：$SSH_HOST（端口 $SSH_PORT）"
+else
+  log "目标主机：$SSH_HOST（端口/密钥走 ~/.ssh/config）"
+fi
 log "远程目录：$REMOTE_DIR"
 [[ "$INIT_MODE" = "1" ]] && warn "首次部署模式：远程若 .env 不存在会随机生成"
 
 # ---------- 远程自检：docker / compose ----------
 log "检查远程 docker 环境..."
-ssh -p "$SSH_PORT" "$SSH_HOST" "
+ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "
   command -v docker >/dev/null 2>&1 || { echo 'ERR: docker not installed'; exit 1; }
   docker compose version >/dev/null 2>&1 || docker-compose version >/dev/null 2>&1 || { echo 'ERR: docker compose not installed'; exit 1; }
   echo OK
@@ -81,7 +97,7 @@ ok "远程 docker 可用"
 
 # ---------- 创建远程目录 ----------
 log "确保远程目录存在：$REMOTE_DIR"
-ssh -p "$SSH_PORT" "$SSH_HOST" "mkdir -p $REMOTE_DIR"
+ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "mkdir -p $REMOTE_DIR"
 ok "远程目录就绪"
 
 # ---------- rsync 同步源码 ----------
@@ -93,7 +109,7 @@ log "rsync 同步 server/ → $SSH_HOST:$REMOTE_DIR/"
 #   - deploy.sh 自身    避免循环
 #   - README.md         远程不需要文档（可选保留，但减小体积）
 rsync -azP --delete \
-  -e "ssh -p $SSH_PORT" \
+  -e "$RSYNC_SSH" \
   --exclude='.env' \
   --exclude='.env.*' \
   --exclude='! .env.example' \
@@ -114,16 +130,16 @@ ok "代码同步完成"
 # ---------- 首次部署：生成 .env ----------
 if [[ "$INIT_MODE" = "1" ]]; then
   log "首次部署：检查远程 .env 是否已存在"
-  ENV_EXISTS=$(ssh -p "$SSH_PORT" "$SSH_HOST" "test -f $REMOTE_DIR/.env && echo yes || echo no")
+  ENV_EXISTS=$(ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "test -f $REMOTE_DIR/.env && echo yes || echo no")
   if [[ "$ENV_EXISTS" = "yes" ]]; then
     warn "远程 .env 已存在，跳过生成（如需重置请先 ssh 删除该文件）"
   else
     # 自动生成强随机 token / 密码
-    [[ -z "$PB_SYNC_TOKEN" ]]    && PB_SYNC_TOKEN=$(openssl rand -hex 16 2>/dev/null || ssh -p "$SSH_PORT" "$SSH_HOST" "head -c 16 /dev/urandom | xxd -p")
-    [[ -z "$PB_MYSQL_PASSWORD" ]] && PB_MYSQL_PASSWORD=$(openssl rand -hex 16 2>/dev/null || ssh -p "$SSH_PORT" "$SSH_HOST" "head -c 16 /dev/urandom | xxd -p")
+    [[ -z "$PB_SYNC_TOKEN" ]]    && PB_SYNC_TOKEN=$(openssl rand -hex 16 2>/dev/null || ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "head -c 16 /dev/urandom | xxd -p")
+    [[ -z "$PB_MYSQL_PASSWORD" ]] && PB_MYSQL_PASSWORD=$(openssl rand -hex 16 2>/dev/null || ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "head -c 16 /dev/urandom | xxd -p")
 
     log "生成远程 .env"
-    ssh -p "$SSH_PORT" "$SSH_HOST" "cat > $REMOTE_DIR/.env <<EOF
+    ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "cat > $REMOTE_DIR/.env <<EOF
 # 由 deploy.sh --init 自动生成
 SYNC_TOKEN=$PB_SYNC_TOKEN
 MYSQL_ROOT_PASSWORD=$PB_MYSQL_PASSWORD
@@ -140,7 +156,7 @@ EOF"
   fi
 else
   log "非首次部署模式：要求远程 .env 已存在"
-  ENV_EXISTS=$(ssh -p "$SSH_PORT" "$SSH_HOST" "test -f $REMOTE_DIR/.env && echo yes || echo no")
+  ENV_EXISTS=$(ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "test -f $REMOTE_DIR/.env && echo yes || echo no")
   [[ "$ENV_EXISTS" = "yes" ]] || die "远程 $REMOTE_DIR/.env 不存在，请用 --init 首次部署：
   $0 $SSH_HOST --init"
   ok "远程 .env 存在"
@@ -151,7 +167,7 @@ log "远程执行 docker compose up -d --build..."
 # 这里强制用 v2 语法 `docker compose`（不是 v1 的 `docker-compose`）
 # 用 --build 是为了用最新代码 rebuild server 镜像；mysql 走 pull
 # 加上 --remove-orphans 防止历史残留容器
-ssh -p "$SSH_PORT" "$SSH_HOST" "
+ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "
   set -e
   cd $REMOTE_DIR
   docker compose pull mysql 2>&1 | tail -3
@@ -163,7 +179,7 @@ ok "容器已启动"
 log "等待 /healthz 返回 200..."
 HEALTHY=0
 for i in $(seq 1 30); do
-  if ssh -p "$SSH_PORT" "$SSH_HOST" "curl -fsS http://127.0.0.1:$PB_SERVER_PORT/healthz" >/dev/null 2>&1; then
+  if ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "curl -fsS http://127.0.0.1:$PB_SERVER_PORT/healthz" >/dev/null 2>&1; then
     HEALTHY=1
     break
   fi
@@ -176,12 +192,12 @@ if [[ "$HEALTHY" = "1" ]]; then
   ok "服务端健康检查通过"
 else
   warn "/healthz 30s 内未就绪，可能还在启动；查看日志："
-  echo "  ssh -p $SSH_PORT $SSH_HOST 'cd $REMOTE_DIR && docker compose logs --tail 50 server'"
+  echo "  ssh ${SSH_PORT_ARG[*]} $SSH_HOST 'cd $REMOTE_DIR && docker compose logs --tail 50 server'"
   exit 1
 fi
 
 # ---------- 输出访问地址 ----------
-REMOTE_IP=$(ssh -p "$SSH_PORT" "$SSH_HOST" "
+REMOTE_IP=$(ssh "${SSH_PORT_ARG[@]}" "$SSH_HOST" "
   # 优先取公网 IP（若有）；失败则取首个内网 IPv4
   curl -fsS --max-time 2 https://api.ipify.org 2>/dev/null || \
   ip -4 -o addr show scope global 2>/dev/null | awk '{print \$4}' | head -1 | cut -d/ -f1

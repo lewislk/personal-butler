@@ -28,10 +28,13 @@ final class PasswordAccount {
     /// Keychain 中的 key，用于取得密码明文
     var passwordKeychainKey: String
     var updatedAt: Date
+    /// 是否为首次安装时灌入的 Demo 数据；用户自添的为 false。
+    var isDemo: Bool
 
     init(id: UUID = UUID(), platform: String, account: String,
          typeText: String = "", category: PasswordCategory = .social,
-         passwordKeychainKey: String, updatedAt: Date = .init()) {
+         passwordKeychainKey: String, updatedAt: Date = .init(),
+         isDemo: Bool = false) {
         self.id = id
         self.platform = platform
         self.account = account
@@ -39,6 +42,7 @@ final class PasswordAccount {
         self.categoryRaw = category.rawValue
         self.passwordKeychainKey = passwordKeychainKey
         self.updatedAt = updatedAt
+        self.isDemo = isDemo
     }
 
     var category: PasswordCategory { PasswordCategory(rawValue: categoryRaw) ?? .custom }

@@ -14,9 +14,12 @@ final class OTPAccount {
     var period: Int
     var digits: Int
     var order: Int
+    /// 是否为首次安装时灌入的 Demo 数据；用户自添的为 false。
+    var isDemo: Bool
 
     init(id: UUID = UUID(), issuer: String, accountName: String,
-         secretKeychainKey: String, period: Int = 30, digits: Int = 6, order: Int = 0) {
+         secretKeychainKey: String, period: Int = 30, digits: Int = 6, order: Int = 0,
+         isDemo: Bool = false) {
         self.id = id
         self.issuer = issuer
         self.accountName = accountName
@@ -24,5 +27,6 @@ final class OTPAccount {
         self.period = period
         self.digits = digits
         self.order = order
+        self.isDemo = isDemo
     }
 }

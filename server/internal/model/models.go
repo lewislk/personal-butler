@@ -49,6 +49,8 @@ type Schedule struct {
 	ReminderMinutesBefore *int
 	ColorTag              string `gorm:"size:32"`
 	IsCompleted           bool
+	// v5 新增：标记首启 Demo 数据；DB 列默认 0（false）兼容旧数据。
+	IsDemo bool `gorm:"column:is_demo;not null;default:0"`
 }
 
 func (Schedule) TableName() string { return "schedule" }
@@ -62,6 +64,8 @@ type Anniversary struct {
 	Type               string `gorm:"size:32"`
 	ReminderDaysBefore *int
 	Emoji              string `gorm:"size:16"`
+	// v5 新增
+	IsDemo bool `gorm:"column:is_demo;not null;default:0"`
 }
 
 func (Anniversary) TableName() string { return "anniversary" }
@@ -75,6 +79,8 @@ type Password struct {
 	Category      string `gorm:"size:64"`
 	PasswordPlain string `gorm:"type:text"`
 	UpdatedAt     float64
+	// v5 新增
+	IsDemo bool `gorm:"column:is_demo;not null;default:0"`
 }
 
 func (Password) TableName() string { return "password" }
@@ -88,6 +94,8 @@ type OTP struct {
 	Period      int
 	Digits      int
 	OrderIdx    int `gorm:"column:order_idx"`
+	// v5 新增
+	IsDemo bool `gorm:"column:is_demo;not null;default:0"`
 }
 
 func (OTP) TableName() string { return "otp" }
@@ -111,6 +119,8 @@ type Food struct {
 	Longitude *float64 `gorm:"type:double;column:longitude"`
 	// v3 图片图标（base64 编码的 JPEG bytes；NULL = 未设置）
 	IconImageBase64 *string `gorm:"type:longtext;column:icon_image_base64"`
+	// v5 新增
+	IsDemo bool `gorm:"column:is_demo;not null;default:0"`
 }
 
 func (Food) TableName() string { return "food" }
@@ -154,6 +164,8 @@ type Recipe struct {
 	Tips                 string `gorm:"type:text"`
 	// v4 新增：菜谱图片图标（base64 编码的 JPEG bytes）
 	IconImageBase64 *string `gorm:"type:longtext;column:icon_image_base64"`
+	// v5 新增
+	IsDemo bool `gorm:"column:is_demo;not null;default:0"`
 }
 
 func (Recipe) TableName() string { return "cook_recipe" }
@@ -166,6 +178,8 @@ type Note struct {
 	Tag       string `gorm:"size:64"`
 	CreatedAt float64
 	UpdatedAt float64
+	// v5 新增
+	IsDemo bool `gorm:"column:is_demo;not null;default:0"`
 }
 
 func (Note) TableName() string { return "note" }

@@ -13,7 +13,10 @@
 --      （Go 侧类型 float64；MySQL 侧使用 DOUBLE），避免时区与精度歧义。
 --   4. 敏感字段：password.password_plain / otp.secret_plain 明文入库 —— 与
 --      客户端契约一致（仅局域网内使用，二期上 AES 后再迁移）。
---   5. 当前 schema 对齐 iOS 端 SyncMeta.dataVersion = 4。
+--   5. 当前 schema 对齐 iOS 端 SyncMeta.dataVersion = 5。
+--      v5 变更：schedule / anniversary / password / otp / food / cook_recipe / note
+--      新增 is_demo 列（TINYINT(1) NOT NULL DEFAULT 0），用于客户端「清理Demo数据」
+--      按此过滤首启灌入的示例数据；用户自添 / Web 表单录入的数据 is_demo=0。
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS `personal_butler`
@@ -28,7 +31,7 @@ CREATE TABLE `sync_meta` (
     `device_id`       VARCHAR(64)  NOT NULL,
     `sync_timestamp`  BIGINT       NOT NULL,
     `app_version`     VARCHAR(32)  NOT NULL DEFAULT '',
-    `data_version`    INT          NOT NULL DEFAULT 4,
+    `data_version`    INT          NOT NULL DEFAULT 5,
     `updated_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`device_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -64,6 +67,7 @@ CREATE TABLE `schedule` (
     `reminder_minutes_before`   INT          NULL,
     `color_tag`                 VARCHAR(32)  NOT NULL DEFAULT '',
     `is_completed`              TINYINT(1)   NOT NULL DEFAULT 0,
+    `is_demo`                   TINYINT(1)   NOT NULL DEFAULT 0,
     PRIMARY KEY (`device_id`, `id`),
     KEY `idx_schedule_device_start` (`device_id`, `start_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -79,6 +83,7 @@ CREATE TABLE `anniversary` (
     `type`                 VARCHAR(32)  NOT NULL DEFAULT '',
     `reminder_days_before` INT          NULL,
     `emoji`                VARCHAR(16)  NOT NULL DEFAULT '',
+    `is_demo`              TINYINT(1)   NOT NULL DEFAULT 0,
     PRIMARY KEY (`device_id`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -93,6 +98,7 @@ CREATE TABLE `password` (
     `category`        VARCHAR(64)  NOT NULL DEFAULT '',
     `password_plain`  TEXT         NULL,
     `updated_at`      DOUBLE       NOT NULL DEFAULT 0,
+    `is_demo`         TINYINT(1)   NOT NULL DEFAULT 0,
     PRIMARY KEY (`device_id`, `id`),
     KEY `idx_password_device_platform` (`device_id`, `platform`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -108,11 +114,12 @@ CREATE TABLE `otp` (
     `period`        INT          NOT NULL DEFAULT 30,
     `digits`        INT          NOT NULL DEFAULT 6,
     `order_idx`     INT          NOT NULL DEFAULT 0,
+    `is_demo`       TINYINT(1)   NOT NULL DEFAULT 0,
     PRIMARY KEY (`device_id`, `id`),
     KEY `idx_otp_device_order` (`device_id`, `order_idx`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------- food（v2 位置字段 / v3 rating→DOUBLE + icon_image_base64） ----------
+-- ---------- food（v2 位置字段 / v3 rating→DOUBLE + icon_image_base64 / v5 is_demo） ----------
 DROP TABLE IF EXISTS `food`;
 CREATE TABLE `food` (
     `device_id`           VARCHAR(64)  NOT NULL,
@@ -129,11 +136,12 @@ CREATE TABLE `food` (
     `latitude`            DOUBLE       NULL,
     `longitude`           DOUBLE       NULL,
     `icon_image_base64`   LONGTEXT     NULL,
+    `is_demo`             TINYINT(1)   NOT NULL DEFAULT 0,
     PRIMARY KEY (`device_id`, `id`),
     KEY `idx_food_device_date` (`device_id`, `date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------- cook_recipe（v4：移除旧 ingredients 文本字段，新增 ingredients_legacy_raw / icon_image_base64） ----------
+-- ---------- cook_recipe（v4：移除旧 ingredients 文本字段，新增 ingredients_legacy_raw / icon_image_base64 / v5 is_demo） ----------
 DROP TABLE IF EXISTS `cook_recipe`;
 CREATE TABLE `cook_recipe` (
     `device_id`               VARCHAR(64)  NOT NULL,
@@ -147,6 +155,7 @@ CREATE TABLE `cook_recipe` (
     `steps`                   TEXT         NULL,
     `tips`                    TEXT         NULL,
     `icon_image_base64`       LONGTEXT     NULL,
+    `is_demo`                 TINYINT(1)   NOT NULL DEFAULT 0,
     PRIMARY KEY (`device_id`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -185,6 +194,7 @@ CREATE TABLE `note` (
     `tag`        VARCHAR(64)  NOT NULL DEFAULT '',
     `created_at` DOUBLE       NOT NULL DEFAULT 0,
     `updated_at` DOUBLE       NOT NULL DEFAULT 0,
+    `is_demo`    TINYINT(1)   NOT NULL DEFAULT 0,
     PRIMARY KEY (`device_id`, `id`),
     KEY `idx_note_device_updated` (`device_id`, `updated_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

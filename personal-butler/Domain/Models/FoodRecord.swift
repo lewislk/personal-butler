@@ -43,12 +43,15 @@ final class FoodRecord {
     // 图片图标（可选）：走 external storage，SQLite 只存引用
     @Attribute(.externalStorage) var iconImage: Data?
 
+    /// 是否为首次安装时灌入的 Demo 数据；用户自添的为 false。
+    var isDemo: Bool
+
     init(id: UUID = UUID(), name: String, emoji: String = "🍽️",
          rating: Double = 4.0, tags: [String] = [], remark: String = "",
          date: Date = .init(), category: FoodCategory = .chinese,
          placeName: String? = nil, address: String? = nil,
          latitude: Double? = nil, longitude: Double? = nil,
-         iconImage: Data? = nil) {
+         iconImage: Data? = nil, isDemo: Bool = false) {
         self.id = id
         self.name = name
         self.emoji = emoji
@@ -63,6 +66,7 @@ final class FoodRecord {
         self.latitude = latitude
         self.longitude = longitude
         self.iconImage = iconImage
+        self.isDemo = isDemo
     }
 
     var tags: [String] {

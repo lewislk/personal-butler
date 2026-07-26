@@ -28,7 +28,7 @@ type RecipeService struct {
 func NewRecipeService(db *gorm.DB) *RecipeService { return &RecipeService{db: db} }
 
 // 当前 schema 版本，与 iOS 端 SyncMeta.dataVersion 保持一致。
-const currentDataVersion = 4
+const currentDataVersion = 5
 
 // Web 表单 CRUD 专用错误。
 var (
@@ -108,6 +108,7 @@ func (s *RecipeService) List(deviceID string) ([]dto.SyncRecipeDTO, error) {
 			Ingredients:          ings,
 			Steps:                r.Steps, Tips: r.Tips,
 			IconImageBase64: r.IconImageBase64,
+			IsDemo:          boolPtr(r.IsDemo),
 		})
 	}
 	return out, nil
@@ -140,6 +141,7 @@ func (s *RecipeService) Get(deviceID, id string) (*dto.SyncRecipeDTO, error) {
 		Ingredients:          ingDTOs,
 		Steps:                r.Steps, Tips: r.Tips,
 		IconImageBase64: r.IconImageBase64,
+		IsDemo:          boolPtr(r.IsDemo),
 	}, nil
 }
 

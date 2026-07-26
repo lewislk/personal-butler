@@ -166,6 +166,18 @@ func joinStringSlice(s []string) string {
 	return string(b)
 }
 
+// derefBool 把 *bool 解引用为 bool；nil 视为 false（兼容旧客户端不带 isDemo 字段的上传）。
+func derefBool(p *bool) bool {
+	if p == nil {
+		return false
+	}
+	return *p
+}
+
+// boolPtr 把 bool 转成 *bool，用于 loadPayload 把 model.IsDemo（bool）写回 DTO.IsDemo（*bool）。
+// DB 列默认 0，所以 model.IsDemo 永远有值；这里直接取地址即可。
+func boolPtr(b bool) *bool { return &b }
+
 // parseStringSlice 反向：JSON 数组字符串 → []string；空串 → nil
 func parseStringSlice(s string) []string {
 	if s == "" {
@@ -216,6 +228,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				StartDate: x.StartDate, EndDate: x.EndDate,
 				IsAllDay: x.IsAllDay, ReminderMinutesBefore: x.ReminderMinutesBefore,
 				ColorTag: x.ColorTag, IsCompleted: x.IsCompleted,
+				IsDemo:   derefBool(x.IsDemo),
 			})
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
@@ -230,6 +243,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				DeviceID: deviceID, ID: x.ID,
 				Name: x.Name, Date: x.Date, IsLunar: x.IsLunar, Type: x.Type,
 				ReminderDaysBefore: x.ReminderDaysBefore, Emoji: x.Emoji,
+				IsDemo: derefBool(x.IsDemo),
 			})
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
@@ -245,6 +259,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				Platform: x.Platform, Account: x.Account,
 				TypeText: x.TypeText, Category: x.Category,
 				PasswordPlain: x.PasswordPlain, UpdatedAt: x.UpdatedAt,
+				IsDemo: derefBool(x.IsDemo),
 			})
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
@@ -260,6 +275,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				Issuer: x.Issuer, AccountName: x.AccountName,
 				SecretPlain: x.SecretPlain,
 				Period:      x.Period, Digits: x.Digits, OrderIdx: x.Order,
+				IsDemo: derefBool(x.IsDemo),
 			})
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
@@ -280,6 +296,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				PlaceName: x.PlaceName, Address: x.Address,
 				Latitude: x.Latitude, Longitude: x.Longitude,
 				IconImageBase64: x.IconImageBase64,
+				IsDemo:          derefBool(x.IsDemo),
 			})
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
@@ -298,6 +315,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				IngredientsLegacyRaw: x.IngredientsLegacyRaw,
 				Steps: x.Steps, Tips: x.Tips,
 				IconImageBase64: x.IconImageBase64,
+				IsDemo:          derefBool(x.IsDemo),
 			})
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
@@ -343,6 +361,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				DeviceID: deviceID, ID: x.ID,
 				Title: x.Title, Content: x.Content, Tag: x.Tag,
 				CreatedAt: x.CreatedAt, UpdatedAt: x.UpdatedAt,
+				IsDemo: derefBool(x.IsDemo),
 			})
 		}
 		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
@@ -421,6 +440,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 			StartDate: x.StartDate, EndDate: x.EndDate, IsAllDay: x.IsAllDay,
 			ReminderMinutesBefore: x.ReminderMinutesBefore,
 			ColorTag:              x.ColorTag, IsCompleted: x.IsCompleted,
+			IsDemo:                boolPtr(x.IsDemo),
 		})
 	}
 
@@ -432,6 +452,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 		out.AnniversaryList = append(out.AnniversaryList, dto.SyncAnniDTO{
 			ID: x.ID, Name: x.Name, Date: x.Date, IsLunar: x.IsLunar,
 			Type: x.Type, ReminderDaysBefore: x.ReminderDaysBefore, Emoji: x.Emoji,
+			IsDemo: boolPtr(x.IsDemo),
 		})
 	}
 
@@ -444,6 +465,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 			ID: x.ID, Platform: x.Platform, Account: x.Account,
 			TypeText: x.TypeText, Category: x.Category,
 			PasswordPlain: x.PasswordPlain, UpdatedAt: x.UpdatedAt,
+			IsDemo: boolPtr(x.IsDemo),
 		})
 	}
 
@@ -455,6 +477,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 		out.OTPList = append(out.OTPList, dto.SyncOTPDTO{
 			ID: x.ID, Issuer: x.Issuer, AccountName: x.AccountName,
 			SecretPlain: x.SecretPlain, Period: x.Period, Digits: x.Digits, Order: x.OrderIdx,
+			IsDemo: boolPtr(x.IsDemo),
 		})
 	}
 
@@ -477,6 +500,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 			PlaceName: x.PlaceName, Address: x.Address,
 			Latitude: x.Latitude, Longitude: x.Longitude,
 			IconImageBase64: x.IconImageBase64,
+			IsDemo:          boolPtr(x.IsDemo),
 		})
 	}
 
@@ -507,6 +531,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 			Ingredients:          ings,
 			Steps:                x.Steps, Tips: x.Tips,
 			IconImageBase64: x.IconImageBase64,
+			IsDemo:          boolPtr(x.IsDemo),
 		})
 	}
 
@@ -529,6 +554,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 		out.NoteList = append(out.NoteList, dto.SyncNoteDTO{
 			ID: x.ID, Title: x.Title, Content: x.Content, Tag: x.Tag,
 			CreatedAt: x.CreatedAt, UpdatedAt: x.UpdatedAt,
+			IsDemo:    boolPtr(x.IsDemo),
 		})
 	}
 
