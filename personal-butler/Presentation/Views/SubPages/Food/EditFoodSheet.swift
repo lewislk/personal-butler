@@ -276,10 +276,7 @@ struct EditFoodSheet: View {
 
     private func openInMaps() {
         guard let lat = latitude, let lng = longitude else { return }
-        let q = (placeName ?? address ?? "")
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        guard let url = URL(string: "http://maps.apple.com/?q=\(q)&ll=\(lat),\(lng)") else { return }
-        UIApplication.shared.open(url)
+        MapsNavigator.openInMaps(latitude: lat, longitude: lng, name: placeName ?? address)
     }
 
     private func save() {
