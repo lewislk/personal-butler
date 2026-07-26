@@ -42,10 +42,20 @@ struct CookRecipeView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    Spacer(minLength: 80)
+                    Spacer(minLength: 120)
                 }
             }
             .background(Color.white)
+
+            // 烹饪车 bar
+            if !cartItems.isEmpty {
+                VStack {
+                    Spacer()
+                    cartBar
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 88)
+                }
+            }
 
             FABAddButton { showCreate = true }
         }
@@ -54,6 +64,57 @@ struct CookRecipeView: View {
         .sheet(isPresented: $showCreate) { CookRecipeEditSheet(recipe: nil) }
         .sheet(item: $editingRecipe) { r in
             CookRecipeEditSheet(recipe: r)
+        }
+        .sheet(isPresented: $showCartSheet) {
+            CookCartSheet(showSubmitConfirm: $showSubmitConfirm)
+        }
+        .alert("提交烹饪任务", isPresented: $showSubmitConfirm) {
+            Button("取消", role: .cancel) { }
+            Button("提交") {
+                try? SubmitCookTaskUseCase().execute(context: context)
+                withAnimation { toastVisible = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    withAnimation { toastVisible = false }
+                }
+            }
+        } message: {
+            if cartItems.count == 1 {
+                Text("将生成 1 条准备食材任务 + 1 条烹饪任务，并清空烹饪车。")
+            } else {
+                Text("将生成 1 条准备食材任务 + \(cartItems.count) 条烹饪任务，并清空烹饪车。")
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if toastVisible {
+                Text("已生成 \(cartItems.count + 1) 条任务")
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 20).fill(.black.opacity(0.75)))
+                    .foregroundStyle(.white)
+                    .padding(.bottom, 32)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    private var cartBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "cart.fill")
+                .foregroundStyle(AppColorTheme.primary)
+            Text("烹饪车：\(cartItems.count) 道菜")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(AppColorTheme.text)
+            Spacer()
+            Button("提交") {
+                showSubmitConfirm = true
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(Capsule().fill(.regularMaterial))
+        .shadow(color: AppColorTheme.cardShadow, radius: 8, x: 0, y: 4)
+        .onTapGesture {
+            showCartSheet = true
         }
     }
 
@@ -529,5 +590,85 @@ struct CookRecipeEditSheet: View {
         }
         try? context.save()
         dismiss()
+    }
+}
+
+struct CookCartSheet: View {
+    @Environment(\.modelContext) private var context
+    @Query(sort: \CookCart.addedAt) private var cartItems: [CookCart]
+    @Binding var showSubmitConfirm: Bool
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if cartItems.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "cart")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.secondary)
+                        Text("烹饪车为空")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        ForEach(cartItems) { item in
+                            cartRow(item)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("烹饪车")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { showSubmitConfirm = false }
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Button("提交烹饪任务") {
+                        showSubmitConfirm = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(cartItems.isEmpty)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cartRow(_ item: CookCart) -> some View {
+        HStack(spacing: 12) {
+            if let r = item.recipe {
+                ZStack {
+                    LinearGradient(colors: [Color(hex: 0xFFE0B2), Color(hex: 0xFFAB6E)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                    if let data = r.iconImage, let ui = UIImage(data: data) {
+                        Image(uiImage: ui).resizable().scaledToFill()
+                    } else {
+                        Text(r.emoji).font(.system(size: 22))
+                    }
+                }
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.recipe?.name ?? "未知菜")
+                    .font(.system(size: 14, weight: .semibold))
+                Stepper("份数：\(item.servings)", value: Binding(
+                    get: { item.servings },
+                    set: { item.servings = $0; try? context.save() }
+                ), in: 1...20)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(role: .destructive) {
+                context.delete(item)
+                try? context.save()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
