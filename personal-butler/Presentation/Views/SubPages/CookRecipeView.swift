@@ -5,12 +5,18 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct CookRecipeView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \CookRecipe.name) private var list: [CookRecipe]
+    @Query(sort: \CookCart.addedAt) private var cartItems: [CookCart]
     @State private var filterIndex: Int = 0
     @State private var showCreate = false
+    @State private var editingRecipe: CookRecipe?
+    @State private var showCartSheet = false
+    @State private var showSubmitConfirm = false
+    @State private var toastVisible = false
 
     private let categories: [(String, CookCategory)] = [
         ("全部菜谱", .all),
@@ -45,7 +51,7 @@ struct CookRecipeView: View {
         }
         .navigationTitle("烹饪管理")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showCreate) { CreateCookSheet() }
+        .sheet(isPresented: $showCreate) { CookRecipeEditSheet(recipe: nil) }
     }
 
     private var filtered: [CookRecipe] {
@@ -192,61 +198,254 @@ struct RecipeDetailView: View {
     }
 }
 
-struct CreateCookSheet: View {
+struct CookRecipeEditSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var emoji = "🍲"
-    @State private var minutes = 30
+
+    let recipe: CookRecipe?
+
+    // 表单状态
+    @State private var name: String = ""
+    @State private var emoji: String = "🍲"
+    @State private var iconImage: Data? = nil
+    @State private var minutes: Int = 30
     @State private var difficulty: CookDifficulty = .easy
     @State private var category: CookCategory = .home
-    @State private var ingredients = ""
-    @State private var steps = ""
+    @State private var ingredients: [IngredientDraft] = [.init()]
+    @State private var steps: String = ""
+    @State private var tips: String = ""
+
+    // UI 状态
+    @FocusState private var focusedField: CookField?
+    @State private var showIconPicker: Bool = false
+
+    private enum CookField: Hashable {
+        case name
+        case ingredientName(UUID)
+        case ingredientAmount(UUID)
+        case steps
+        case tips
+    }
+
+    private struct IngredientDraft: Identifiable {
+        let id: UUID
+        var name: String
+        var amount: String
+        init(id: UUID = UUID(), name: String = "", amount: String = "") {
+            self.id = id; self.name = name; self.amount = amount
+        }
+    }
+
+    init(recipe: CookRecipe?) {
+        self.recipe = recipe
+        if let r = recipe {
+            _name = State(initialValue: r.name)
+            _emoji = State(initialValue: r.emoji)
+            _iconImage = State(initialValue: r.iconImage)
+            _minutes = State(initialValue: r.minutes)
+            _difficulty = State(initialValue: r.difficulty)
+            _category = State(initialValue: r.category)
+            _steps = State(initialValue: r.steps)
+            _tips = State(initialValue: r.tips)
+            _ingredients = State(initialValue: r.ingredients.isEmpty
+                ? [IngredientDraft()]
+                : r.ingredients.sorted { $0.order < $1.order }
+                    .map { IngredientDraft(id: $0.id, name: $0.name, amount: $0.amount) })
+        }
+    }
 
     var body: some View {
         NavigationStack {
             Form {
+                // 1. 基础信息
                 Section {
-                    TextField("菜名", text: $name)
-                    TextField("Emoji", text: $emoji)
+                    HStack {
+                        TextField("菜名", text: $name)
+                            .focused($focusedField, equals: .name)
+                        if !name.isEmpty {
+                            Button {
+                                name = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    Button {
+                        focusedField = nil
+                        showIconPicker = true
+                    } label: {
+                        HStack {
+                            Text("图标")
+                            Spacer()
+                            iconPreview
+                                .frame(width: 36, height: 36)
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
+
+                // 2. 参数
                 Section {
                     Picker("难度", selection: $difficulty) {
                         ForEach(CookDifficulty.allCases, id: \.self) { d in
                             Text(d.label).tag(d)
                         }
                     }
+                    .onChange(of: difficulty) { _, _ in focusedField = nil }
                     Stepper("时长：\(minutes) 分钟", value: $minutes, in: 5...240, step: 5)
+                        .onChange(of: minutes) { _, _ in focusedField = nil }
                     Picker("分类", selection: $category) {
                         Text("家常菜").tag(CookCategory.home)
                         Text("面食").tag(CookCategory.noodle)
                         Text("汤羹").tag(CookCategory.soup)
                         Text("甜品").tag(CookCategory.dessert)
                     }
+                    .onChange(of: category) { _, _ in focusedField = nil }
                 }
+
+                // 3. 食材
                 Section("食材") {
-                    TextField("换行输入食材", text: $ingredients, axis: .vertical).lineLimit(3...8)
+                    ForEach($ingredients) { $ing in
+                        HStack {
+                            TextField("名称", text: $ing.name)
+                                .focused($focusedField, equals: .ingredientName(ing.id))
+                                .frame(maxWidth: .infinity)
+                            TextField("数量/单位", text: $ing.amount, prompt: Text("如 2 个"))
+                                .focused($focusedField, equals: .ingredientAmount(ing.id))
+                                .frame(width: 90)
+                            Button {
+                                focusedField = nil
+                                deleteIngredient(ing.id)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    Button {
+                        focusedField = nil
+                        ingredients.append(IngredientDraft())
+                    } label: {
+                        Label("添加食材", systemImage: "plus.circle")
+                    }
                 }
+
+                // 4. 步骤
                 Section("步骤") {
-                    TextField("按序号写", text: $steps, axis: .vertical).lineLimit(3...10)
+                    TextField("按序号写", text: $steps, axis: .vertical)
+                        .lineLimit(3...10)
+                        .focused($focusedField, equals: .steps)
+                }
+
+                // 5. 小贴士
+                Section("小贴士") {
+                    TextField("如：盐少许、火候控制...", text: $tips, axis: .vertical)
+                        .lineLimit(2...6)
+                        .focused($focusedField, equals: .tips)
                 }
             }
-            .navigationTitle("新增菜谱")
+            .navigationTitle(recipe == nil ? "新增菜谱" : "编辑菜谱")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
-                        let r = CookRecipe(name: name.isEmpty ? "未命名" : name,
-                                           emoji: emoji, difficulty: difficulty,
-                                           minutes: minutes, category: category,
-                                           steps: steps)
-                        context.insert(r)
-                        try? context.save()
-                        dismiss()
+                        focusedField = nil
+                        save()
                     }
                 }
             }
+            .sheet(isPresented: $showIconPicker) {
+                IconPickerSheet(initial: currentIcon,
+                                onConfirm: { newIcon in
+                    applyIcon(newIcon)
+                }, emojiCandidates: IconPickerSheet.cookEmoji)
+            }
         }
+    }
+
+    // MARK: - Icon
+
+    private var currentIcon: FoodIcon {
+        if let data = iconImage { return .image(data) }
+        return .emoji(emoji)
+    }
+
+    private func applyIcon(_ icon: FoodIcon) {
+        switch icon {
+        case .emoji(let s):
+            emoji = s
+            iconImage = nil
+        case .image(let d):
+            iconImage = d
+        }
+    }
+
+    @ViewBuilder
+    private var iconPreview: some View {
+        if let data = iconImage, let ui = UIImage(data: data) {
+            Image(uiImage: ui)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 36, height: 36)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else {
+            Text(emoji)
+                .font(.system(size: 22))
+                .frame(width: 36, height: 36)
+                .background(RoundedRectangle(cornerRadius: 8).fill(AppColorTheme.bg))
+        }
+    }
+
+    // MARK: - Ingredient
+
+    private func deleteIngredient(_ id: UUID) {
+        ingredients.removeAll { $0.id == id }
+        if ingredients.isEmpty { ingredients.append(IngredientDraft()) }
+    }
+
+    // MARK: - Save
+
+    private func save() {
+        if let r = recipe {
+            r.name = name.isEmpty ? "未命名" : name
+            r.emoji = emoji
+            r.iconImage = iconImage
+            r.difficultyRaw = difficulty.rawValue
+            r.minutes = minutes
+            r.categoryRaw = category.rawValue
+            r.steps = steps
+            r.tips = tips
+            for old in r.ingredients { context.delete(old) }
+            for (i, draft) in ingredients.enumerated()
+            where !draft.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                let ing = CookIngredient(name: draft.name, amount: draft.amount, order: i)
+                ing.recipe = r
+                context.insert(ing)
+            }
+        } else {
+            let r = CookRecipe(name: name.isEmpty ? "未命名" : name,
+                               emoji: emoji, difficulty: difficulty,
+                               minutes: minutes, category: category,
+                               steps: steps, tips: tips)
+            r.iconImage = iconImage
+            context.insert(r)
+            for (i, draft) in ingredients.enumerated()
+            where !draft.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                let ing = CookIngredient(name: draft.name, amount: draft.amount, order: i)
+                ing.recipe = r
+                context.insert(ing)
+            }
+        }
+        try? context.save()
+        dismiss()
     }
 }
