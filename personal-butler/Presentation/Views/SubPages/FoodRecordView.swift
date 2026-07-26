@@ -105,9 +105,9 @@ struct FoodRecordView: View {
                         .foregroundStyle(AppColorTheme.text)
                     HStack(spacing: 2) {
                         ForEach(0..<5) { i in
-                            Image(systemName: i < f.rating ? "star.fill" : "star")
+                            Image(systemName: Double(i) < f.rating ? "star.fill" : "star")
                                 .font(.system(size: 11))
-                                .foregroundStyle(i < f.rating ? Color(hex: 0xF5A623) : Color(hex: 0xE2E5EA))
+                                .foregroundStyle(Double(i) < f.rating ? Color(hex: 0xF5A623) : Color(hex: 0xE2E5EA))
                         }
                     }
                     if !f.tags.isEmpty {

@@ -27,23 +27,27 @@ final class FoodRecord {
     @Attribute(.unique) var id: UUID
     var name: String
     var emoji: String
-    var rating: Int
+    var rating: Double        // 半星支持：0.0..5.0，step 0.5；iconImage 缺失时 emoji 作为兜底
     var tagsRaw: String       // 逗号分隔
     var remark: String
     var date: Date
     var categoryRaw: String
 
-    // 位置字段（全 Optional，兼容老数据；latitude / longitude 视为整体）
+    // 位置字段（全 Optional）
     var placeName: String?
     var address: String?
     var latitude: Double?
     var longitude: Double?
 
+    // 图片图标（可选）：走 external storage，SQLite 只存引用
+    @Attribute(.externalStorage) var iconImage: Data?
+
     init(id: UUID = UUID(), name: String, emoji: String = "🍽️",
-         rating: Int = 4, tags: [String] = [], remark: String = "",
+         rating: Double = 4.0, tags: [String] = [], remark: String = "",
          date: Date = .init(), category: FoodCategory = .chinese,
          placeName: String? = nil, address: String? = nil,
-         latitude: Double? = nil, longitude: Double? = nil) {
+         latitude: Double? = nil, longitude: Double? = nil,
+         iconImage: Data? = nil) {
         self.id = id
         self.name = name
         self.emoji = emoji
@@ -56,6 +60,7 @@ final class FoodRecord {
         self.address = address
         self.latitude = latitude
         self.longitude = longitude
+        self.iconImage = iconImage
     }
 
     var tags: [String] {

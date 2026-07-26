@@ -18,7 +18,7 @@ struct EditFoodSheet: View {
 
     @State private var name: String
     @State private var emoji: String
-    @State private var rating: Int
+    @State private var rating: Double
     @State private var category: FoodCategory
     @State private var tags: String
     @State private var remark: String
@@ -39,7 +39,7 @@ struct EditFoodSheet: View {
         self.record = record
         _name = State(initialValue: record?.name ?? "")
         _emoji = State(initialValue: record?.emoji ?? "🍽️")
-        _rating = State(initialValue: record?.rating ?? 4)
+        _rating = State(initialValue: record?.rating ?? 4.0)
         _category = State(initialValue: record?.category ?? .chinese)
         _tags = State(initialValue: record?.tagsRaw ?? "")
         _remark = State(initialValue: record?.remark ?? "")
@@ -342,11 +342,11 @@ struct EditFoodSheet: View {
         HStack(spacing: 10) {
             ForEach(1...5, id: \.self) { i in
                 Button {
-                    rating = (rating == i) ? 0 : i
+                    rating = (rating == Double(i)) ? 0 : Double(i)
                 } label: {
-                    Image(systemName: i <= rating ? "star.fill" : "star")
+                    Image(systemName: Double(i) <= rating ? "star.fill" : "star")
                         .font(.system(size: 26))
-                        .foregroundStyle(i <= rating
+                        .foregroundStyle(Double(i) <= rating
                                          ? Color(hex: 0xF5A623)
                                          : Color(hex: 0xC7CCD4))
                         .contentShape(Rectangle())

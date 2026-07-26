@@ -68,7 +68,7 @@ final class BackupSyncUseCase {
             },
             foodRecordList: foods.map {
                 SyncFoodDTO(id: $0.id.uuidString, name: $0.name, emoji: $0.emoji,
-                            rating: $0.rating, tags: $0.tags, remark: $0.remark,
+                            rating: Int($0.rating), tags: $0.tags, remark: $0.remark,
                             date: $0.date.timeIntervalSince1970, category: $0.categoryRaw,
                             placeName: $0.placeName, address: $0.address,
                             latitude: $0.latitude, longitude: $0.longitude)
@@ -340,7 +340,7 @@ final class BackupSyncUseCase {
             guard let uuid = UUID(uuidString: x.id) else { continue }
             let m = FoodRecord(
                 id: uuid, name: x.name, emoji: x.emoji,
-                rating: x.rating, tags: x.tags, remark: x.remark,
+                rating: Double(x.rating), tags: x.tags, remark: x.remark,
                 date: Date(timeIntervalSince1970: x.date),
                 category: FoodCategory(rawValue: x.category) ?? .chinese,
                 placeName: x.placeName, address: x.address,
