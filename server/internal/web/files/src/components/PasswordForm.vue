@@ -92,7 +92,7 @@ watch(
 
 // crypto.getRandomValues 生成 12 位（大写+小写+数字+特殊符号各 3 位）
 function generatePassword() {
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const upper = 'ABCDEFGHJKMNPQRSTUVWXYZ'
   const lower = 'abcdefghijkmnpqrstuvwxyz'
   const digit = '23456789'
   const special = '!@#$%^&*-_=+'

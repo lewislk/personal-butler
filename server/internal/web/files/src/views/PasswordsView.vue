@@ -106,8 +106,12 @@ async function onSelect(id: string) {
 async function onSaved(id: string) {
   currentId.value = id
   mode.value = 'view'
-  await store.fetchList()
-  await store.fetchOne(id)
+  try {
+    await store.fetchList()
+    await store.fetchOne(id)
+  } catch (err) {
+    toast.showError(err, passwordErrorMsg(err))
+  }
 }
 
 function onCancel() {
@@ -119,7 +123,11 @@ async function onDeleted() {
   currentId.value = null
   store.clearCurrent()
   mode.value = 'view'
-  await store.fetchList()
+  try {
+    await store.fetchList()
+  } catch (err) {
+    toast.showError(err, passwordErrorMsg(err))
+  }
 }
 </script>
 
