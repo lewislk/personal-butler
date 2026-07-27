@@ -83,8 +83,8 @@ function categoryLabel(v: string): string {
   return ({ social: '社交', office: '办公', finance: '金融', custom: '自定义' } as Record<string, string>)[v] || v
 }
 
-function categoryTagType(v: string): '' | 'success' | 'warning' | 'danger' | 'info' {
-  return ({ social: '', office: 'success', finance: 'warning', custom: 'info' } as Record<string, '' | 'success' | 'warning' | 'danger' | 'info'>)[v] || ''
+function categoryTagType(v: string): 'primary' | 'success' | 'warning' | 'danger' | 'info' | undefined {
+  return ({ social: undefined, office: 'success', finance: 'warning', custom: 'info' } as Record<string, 'primary' | 'success' | 'warning' | 'danger' | 'info' | undefined>)[v]
 }
 
 function onNew() {
