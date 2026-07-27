@@ -1,6 +1,6 @@
 <template>
   <div class="ingredient-editor">
-    <div v-for="(ing, idx) in ingredients" :key="idx" class="ing-row">
+    <div v-for="(ing, idx) in modelValue" :key="idx" class="ing-row">
       <el-input v-model="ing.name" placeholder="食材名" class="col-name" />
       <el-input v-model="ing.amount" placeholder="用量" class="col-amount" />
       <el-input-number v-model="ing.order" :min="0" :controls="false" placeholder="顺序" class="col-order" />
@@ -18,17 +18,14 @@ import type { RecipeIngredient } from '@/types/recipe'
 const props = defineProps<{ modelValue: Array<Omit<RecipeIngredient, 'id'> & { id?: string }> }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: Array<Omit<RecipeIngredient, 'id'> & { id?: string }>): void }>()
 
-// 模板里用 ingredients 别名引用 props.modelValue（数组引用一致，mutate 同一对象）
-const ingredients = props.modelValue
-
-// 直接 mutate props.modelValue（Pinia store 中也是数组引用），同时 emit 触发响应
+// 直接 mutate props.modelValue（数组引用一致），同时 emit 触发响应
 function add() {
-  ingredients.push({ id: undefined, name: '', amount: '', order: ingredients.length })
-  emit('update:modelValue', ingredients)
+  props.modelValue.push({ id: undefined, name: '', amount: '', order: props.modelValue.length })
+  emit('update:modelValue', props.modelValue)
 }
 function remove(idx: number) {
-  ingredients.splice(idx, 1)
-  emit('update:modelValue', ingredients)
+  props.modelValue.splice(idx, 1)
+  emit('update:modelValue', props.modelValue)
 }
 </script>
 
