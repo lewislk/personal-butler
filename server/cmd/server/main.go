@@ -38,6 +38,10 @@ func main() {
 	recipeSvc := service.NewRecipeService(gdb)
 	recipeH := handler.NewRecipeHandler(recipeSvc)
 
+	// Web 表单录入用的 password CRUD service（共享同一个 DB）
+	passwordSvc := service.NewPasswordService(gdb)
+	passwordH := handler.NewPasswordHandler(passwordSvc)
+
 	if cfg.SyncToken == "" {
 		log.Println("[warn] SYNC_TOKEN 未配置，将跳过 X-Sync-Token 校验（仅建议在开发环境这样做）")
 	}
@@ -58,6 +62,7 @@ func main() {
 	// /api/* Web 表单 CRUD（与 /sync/* 共享同一套鉴权头）
 	api := r.Group("/api", middleware.AuthHeader(cfg.SyncToken))
 	recipeH.Register(api)
+	passwordH.Register(api)
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
