@@ -5,3 +5,6 @@ dist/
 .vite/
 src/auto-imports.d.ts
 src/components.d.ts
+
+# pnpm 不忽略 lockfile，需要提交
+# package-lock.json 已删除，使用 pnpm-lock.yaml

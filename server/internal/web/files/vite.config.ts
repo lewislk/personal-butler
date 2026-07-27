@@ -8,6 +8,9 @@ import { fileURLToPath, URL } from 'node:url'
 // 生产构建输出到 dist/，Go 端 //go:embed all:files/dist 会嵌入
 // 开发模式 dev server 端口 5173，API 走 proxy 到本地 Go 服务
 export default defineConfig({
+  // 生产环境静态资源挂在 /web/static/ 下（见 web.go 的 r.StaticFS）
+  // base 必须与 Go 路由前缀一致，否则 index.html 引用的 /assets/... 会 404
+  base: '/web/static/',
   plugins: [
     vue(),
     AutoImport({

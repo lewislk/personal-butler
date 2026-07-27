@@ -154,6 +154,8 @@ log "rsync 同步 server/ → $SSH_HOST:$REMOTE_DIR/"
 # 排除：
 #   - .env / .env.*     本地环境变量不污染远程
 #   - 本地构建产物     /bin /dist *.exe
+#                     internal/web/files/{node_modules,dist,.vite}
+#                     （Docker 构建时在 frontend 阶段重新 pnpm install + build）
 #   - .git / IDE        无关代码
 #   - deploy.sh 自身    避免循环
 #   - README.md         远程不需要文档（可选保留，但减小体积）
@@ -173,6 +175,9 @@ rsync -azP --delete \
   --exclude='*.log' \
   --exclude='vendor/' \
   --exclude='deploy.sh' \
+  --exclude='internal/web/files/node_modules/' \
+  --exclude='internal/web/files/dist/' \
+  --exclude='internal/web/files/.vite/' \
   "$SCRIPT_DIR/" "$SSH_HOST:$REMOTE_DIR/"
 ok "代码同步完成"
 

@@ -2,7 +2,7 @@
 # PersonalButler · Sync Server 多阶段 Dockerfile
 # ============================================================
 # 阶段 1：frontend（Vite 构建 Vue3 工程）
-#   - 用 node:20-alpine 构建出 dist/ 静态资源
+#   - 用 node:24-alpine 构建出 dist/ 静态资源（pnpm 11.x 要求 Node v22.13+，且与本地开发环境一致）
 # 阶段 2：builder
 #   - 用 golang:1.22-alpine 编译出静态二进制
 #   - 把 frontend 阶段的 dist/ 拷到 embed 路径
@@ -12,17 +12,20 @@
 #   - 内嵌 web/files/dist/* 静态资源（embed.FS），无需额外挂卷
 # ============================================================
 
-# ---------- frontend builder (新增) ----------
-FROM node:20-alpine AS frontend
+# ---------- frontend builder (pnpm) ----------
+# pnpm 11.x 要求 Node.js v22.13+，用 node:24-alpine 与本地开发环境对齐
+FROM node:24-alpine AS frontend
 WORKDIR /web
 # 国内 npm 镜像加速
 RUN npm config set registry https://registry.npmmirror.com
-# 先拷依赖清单，利用 docker layer cache 加速 rebuild
-COPY internal/web/files/package*.json ./
-RUN npm ci
+# 全局安装 pnpm，版本与 package.json 的 packageManager 字段保持一致
+RUN npm install -g pnpm@11.11.0
+# 先拷依赖清单与 pnpm 配置，利用 docker layer cache 加速 rebuild
+COPY internal/web/files/package.json internal/web/files/pnpm-lock.yaml internal/web/files/pnpm-workspace.yaml internal/web/files/.npmrc ./
+RUN pnpm install --frozen-lockfile
 # 拷源码并构建
 COPY internal/web/files/ ./
-RUN npm run build  # 输出到 /web/dist
+RUN pnpm run build  # 输出到 /web/dist
 
 # ---------- backend builder ----------
 FROM golang:1.22-alpine AS builder

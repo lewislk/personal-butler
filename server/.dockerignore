@@ -44,3 +44,5 @@ docker-compose.yml
 internal/web/files/node_modules
 internal/web/files/dist
 internal/web/files/.vite
+
+# 保留 pnpm-lock.yaml / pnpm-workspace.yaml / .npmrc 进入构建上下文
