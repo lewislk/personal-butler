@@ -1,0 +1,14 @@
+// 覆盖 Element-Plus 主题变量，与 iOS AppColorTheme 主色 #007aff 对齐
+// 必须在 element-plus/scss/index 之前导入
+$colors: (
+  'primary': (
+    'base': #007aff,
+  ),
+);
+
+// 圆角与 iOS 端约定一致（12/8/6）
+$border-radius: (
+  'base': 8px,
+  'small': 6px,
+  'round': 12px,
+);

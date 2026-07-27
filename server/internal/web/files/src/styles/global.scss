@@ -1,0 +1,19 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-family: -apple-system, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f6f7f9;
+  color: #1c1c1e;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+#app {
+  min-height: 100vh;
+}
