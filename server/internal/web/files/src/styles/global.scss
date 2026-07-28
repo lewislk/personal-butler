@@ -8,12 +8,85 @@ body {
 }
 body {
   font-family: -apple-system, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  background: #f6f7f9;
-  color: #1c1c1e;
+  background: #f0f2f5;
+  color: #1f2329;
   font-size: 14px;
   line-height: 1.5;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 #app {
   min-height: 100vh;
+}
+
+/* ===== Element-Plus 主题变量覆盖（与 iOS AppColorTheme 主色 #007aff 对齐） ===== */
+:root {
+  --el-color-primary: #007aff;
+  --el-color-primary-light-3: #4d9bff;
+  --el-color-primary-light-5: #80baff;
+  --el-color-primary-light-7: #b3d9ff;
+  --el-color-primary-light-8: #cce4ff;
+  --el-color-primary-light-9: #e0efff;
+  --el-color-primary-dark-2: #0066cc;
+
+  --el-color-success: #34c759;
+  --el-color-warning: #ff9500;
+  --el-color-danger: #ff3b30;
+  --el-color-info: #8e8e93;
+
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: 12px;
+
+  --el-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --el-box-shadow-light: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* ===== 通用页面骨架 ===== */
+.page-container {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+
+  h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #1f2329;
+  }
+}
+
+/* ===== 卡片增强 ===== */
+.el-card {
+  border: none !important;
+  box-shadow: var(--el-box-shadow) !important;
+  transition: box-shadow 0.2s ease;
+}
+.el-card.is-hover-shadow:hover,
+.el-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ===== 滚动条美化 ===== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c1c1c6;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a6;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

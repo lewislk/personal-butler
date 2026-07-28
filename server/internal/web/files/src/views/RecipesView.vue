@@ -1,51 +1,71 @@
 <template>
-  <div class="recipes-view">
-    <aside class="list-pane">
-      <div class="list-header">
-        <el-input v-model="keyword" placeholder="搜索菜谱名" :prefix-icon="Search" clearable size="small" />
-        <el-select v-model="categoryFilter" size="small" class="cat-filter">
-          <el-option label="全部分类" value="" />
-          <el-option label="家常菜" value="home" />
-          <el-option label="面食" value="noodle" />
-          <el-option label="汤羹" value="soup" />
-          <el-option label="甜品" value="dessert" />
-        </el-select>
-        <el-button type="primary" size="small" @click="onNew">+ 新建</el-button>
-      </div>
-      <div class="recipe-list" v-loading="store.loading">
-        <p v-if="!store.list.length" class="empty">还没有菜谱，点击「+ 新建」开始</p>
-        <div
-          v-for="r in filteredList"
-          :key="r.id"
-          class="recipe-item"
-          :class="{ active: r.id === currentId }"
-          @click="onSelect(r.id)"
-        >
-          <span class="emoji">{{ r.emoji || '🍲' }}</span>
-          <span class="name">{{ r.name }}</span>
-          <span class="meta">{{ r.minutes }}min · {{ difficultyLabel(r.difficulty) }}</span>
-        </div>
-      </div>
-    </aside>
+  <div class="page-container">
+    <div class="page-title-bar">
+      <h2>烹饪管理</h2>
+    </div>
 
-    <section class="form-pane">
-      <RecipeForm
-        v-if="store.current || mode === 'create'"
-        :recipe="store.current"
-        @saved="onSaved"
-        @cancel="onCancel"
-        @delete="onDeleted"
-      />
-      <EmptyState v-else emoji="👈" title="点击「+ 新建」或在左侧选择一条菜谱开始录入" hint="保存后，iOS 端走「局域网同步 → 下载」即可恢复到本地" />
-    </section>
+    <div class="recipes-view">
+      <aside class="list-pane">
+        <el-card shadow="never" class="list-card">
+          <div class="list-header">
+            <el-input v-model="keyword" placeholder="搜索菜谱名" :prefix-icon="Search" clearable size="default" />
+            <el-select v-model="categoryFilter" size="default" class="cat-filter">
+              <el-option label="全部分类" value="" />
+              <el-option label="家常菜" value="home" />
+              <el-option label="面食" value="noodle" />
+              <el-option label="汤羹" value="soup" />
+              <el-option label="甜品" value="dessert" />
+            </el-select>
+            <el-button type="primary" :icon="Plus" @click="onNew">新建菜谱</el-button>
+          </div>
+
+          <el-scrollbar class="recipe-scroll" v-loading="store.loading">
+            <el-empty v-if="!store.list.length" description="还没有菜谱，点击「新建菜谱」开始" :image-size="80" />
+            <div
+              v-for="r in filteredList"
+              :key="r.id"
+              class="recipe-item"
+              :class="{ active: r.id === currentId }"
+              @click="onSelect(r.id)"
+            >
+              <div class="item-emoji">{{ r.emoji || '🍲' }}</div>
+              <div class="item-main">
+                <div class="item-name">{{ r.name }}</div>
+                <div class="item-meta">
+                  <el-tag size="small" effect="plain" round>{{ difficultyLabel(r.difficulty) }}</el-tag>
+                  <span class="minutes">{{ r.minutes }} 分钟</span>
+                </div>
+              </div>
+            </div>
+          </el-scrollbar>
+        </el-card>
+      </aside>
+
+      <section class="form-pane">
+        <RecipeForm
+          v-if="store.current || mode === 'create'"
+          :recipe="store.current"
+          @saved="onSaved"
+          @cancel="onCancel"
+          @delete="onDeleted"
+        />
+        <el-card v-else shadow="never" class="empty-pane">
+          <el-empty description="点击「新建菜谱」或在左侧选择一条菜谱开始录入" :image-size="120">
+            <template #description>
+              <p style="margin: 0">点击「新建菜谱」或在左侧选择一条菜谱开始录入</p>
+              <p style="margin: 4px 0 0; color: #8e8e93; font-size: 12px">保存后，iOS 端走「局域网同步 → 下载」即可恢复到本地</p>
+            </template>
+          </el-empty>
+        </el-card>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Plus, Search } from '@element-plus/icons-vue'
 import RecipeForm from '@/components/RecipeForm.vue'
-import EmptyState from '@/components/EmptyState.vue'
 import { useRecipesStore, recipeErrorMsg } from '@/stores/recipes'
 import { useToast } from '@/composables/useToast'
 
@@ -117,9 +137,8 @@ async function onDeleted() {
 <style scoped lang="scss">
 .recipes-view {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 340px 1fr;
   gap: 16px;
-  padding: 16px 24px;
   align-items: start;
 }
 @media (max-width: 960px) {
@@ -131,6 +150,11 @@ async function onDeleted() {
   position: sticky;
   top: 72px;
 }
+.list-card {
+  :deep(.el-card__body) {
+    padding: 12px;
+  }
+}
 .list-header {
   display: flex;
   flex-direction: column;
@@ -140,48 +164,64 @@ async function onDeleted() {
 .cat-filter {
   width: 100%;
 }
-.recipe-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.recipe-scroll {
+  height: calc(100vh - 280px);
+  min-height: 300px;
 }
 .recipe-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: #fff;
-  border: 1px solid #e5e5ea;
-  border-radius: 8px;
+  gap: 12px;
   padding: 10px 12px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: all 0.15s ease;
+  margin-bottom: 4px;
+
+  &:hover {
+    background: #f5f7fa;
+  }
+  &.active {
+    background: linear-gradient(135deg, #e0efff 0%, #f0f8ff 100%);
+    box-shadow: inset 3px 0 0 #007aff;
+  }
 }
-.recipe-item:hover {
-  border-color: #007aff;
-}
-.recipe-item.active {
-  background: #f0f8ff;
-  border-color: #007aff;
-}
-.recipe-item .emoji {
-  font-size: 18px;
+.item-emoji {
+  font-size: 22px;
   flex-shrink: 0;
+  width: 32px;
+  text-align: center;
 }
-.recipe-item .name {
+.item-main {
   flex: 1;
+  overflow: hidden;
+}
+.item-name {
+  font-weight: 500;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #1f2329;
 }
-.recipe-item .meta {
+.item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.minutes {
   font-size: 11px;
   color: #8e8e93;
-  flex-shrink: 0;
 }
-.empty {
-  color: #8e8e93;
-  text-align: center;
-  padding: 24px;
-  font-size: 13px;
+.empty-pane {
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  :deep(.el-card__body) {
+    width: 100%;
+  }
 }
 </style>

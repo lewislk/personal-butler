@@ -9,10 +9,15 @@ export const http: AxiosInstance = axios.create({
 
 http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const cfg = useConfigStore()
-  if (!cfg.deviceId) {
+  // /api/devices 是元信息查询，用户首次配置时还没有 device id，也不需要 sync_token
+  const isDeviceListUrl = config.url === '/api/devices' || config.url?.startsWith('/api/devices')
+  if (!cfg.deviceId && !isDeviceListUrl) {
     return Promise.reject(new ApiError(ErrorCode.HEADER_MISSING, '请先在配置中填写 Device ID'))
   }
-  config.headers.set('X-Device-ID', cfg.deviceId)
+  if (cfg.deviceId) {
+    config.headers.set('X-Device-ID', cfg.deviceId)
+  }
+  // 其余端点仍需要 X-Sync-Token；/api/devices 后端已不校验，发送了也无副作用
   config.headers.set('X-Sync-Token', cfg.syncToken || '')
   config.headers.set('Content-Type', 'application/json')
   return config

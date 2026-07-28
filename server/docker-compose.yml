@@ -24,7 +24,7 @@
 #
 # 健康检查：
 #   - mysql healthcheck 用 mysqladmin ping（仅内置 mysql）
-#   - server 通过 restart: on-failure + db.Open 重试等待 mysql 就绪
+#   - server 通过 restart: always + db.Open 重试等待 mysql 就绪
 # ============================================================
 
 services:
@@ -34,7 +34,7 @@ services:
       dockerfile: Dockerfile
     image: personal-butler-server:latest
     container_name: personal-butler-server
-    restart: on-failure
+    restart: always
     ports:
       - "${SERVER_PORT:-8090}:8090"
     environment:
@@ -53,7 +53,7 @@ services:
     profiles: ["mysql"]
     image: mysql:8.0
     container_name: personal-butler-mysql
-    restart: on-failure
+    restart: always
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysql123}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-personal_butler}

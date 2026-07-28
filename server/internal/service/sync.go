@@ -131,6 +131,26 @@ func (s *SyncService) Clear(deviceID string) error {
 	})
 }
 
+// ListDevices 返回 sync_meta 表中所有设备的元信息，按最近更新时间倒序。
+// 用于 Web 配置页让用户从已上传过数据的 device 列表中选择当前操作的设备。
+func (s *SyncService) ListDevices() ([]dto.DeviceItem, error) {
+	var rows []model.SyncMetaRow
+	if err := s.db.Order("updated_at desc").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.DeviceItem, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, dto.DeviceItem{
+			DeviceID:      r.DeviceID,
+			SyncTimestamp: r.SyncTimestamp,
+			AppVersion:    r.AppVersion,
+			DataVersion:   r.DataVersion,
+			UpdatedAt:     r.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+	return out, nil
+}
+
 // ---------- 内部辅助 ----------
 
 // deviceScopedTables 所有 (device_id, ...) 主键的业务表模型集合。

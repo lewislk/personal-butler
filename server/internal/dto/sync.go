@@ -179,6 +179,17 @@ type SyncInfo struct {
 	TotalCount int64 `json:"totalCount"`
 }
 
+// DeviceItem GET /api/devices 列表项。
+// 用于 Web 配置页让用户从已上传过数据的 device 列表中选择当前操作的设备。
+type DeviceItem struct {
+	DeviceID      string `json:"deviceId"`
+	SyncTimestamp int64  `json:"syncTimestamp"`
+	AppVersion    string `json:"appVersion"`
+	DataVersion   int    `json:"dataVersion"`
+	// UpdatedAt 最近一次上传时间（RFC3339 格式，前端直接展示）
+	UpdatedAt string `json:"updatedAt"`
+}
+
 // APIResponse 统一返回结构。
 type APIResponse struct {
 	Code int    `json:"code"`

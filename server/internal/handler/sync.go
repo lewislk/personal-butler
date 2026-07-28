@@ -28,6 +28,23 @@ func (h *SyncHandler) Register(rg *gin.RouterGroup) {
 	rg.DELETE("/clear", h.Clear)
 }
 
+// RegisterDeviceList 挂载 GET /devices 到指定 group。
+// 该 group 不应挂任何鉴权 middleware：用户首次配置时既无 device id 也无 token。
+func (h *SyncHandler) RegisterDeviceList(rg *gin.RouterGroup) {
+	rg.GET("/devices", h.ListDevices)
+}
+
+// ListDevices 返回 sync_meta 表中所有 device 列表，供 Web 配置页下拉选择。
+func (h *SyncHandler) ListDevices(c *gin.Context) {
+	items, err := h.svc.ListDevices()
+	if err != nil {
+		log.Printf("[sync] list devices failed err=%v", err)
+		respond(c, middleware.CodeInternal, "list devices failed: "+err.Error(), nil)
+		return
+	}
+	respond(c, middleware.CodeOK, "ok", items)
+}
+
 // Upload 全量上传：body 是完整 SyncPayload JSON。
 func (h *SyncHandler) Upload(c *gin.Context) {
 	deviceID := middleware.DeviceID(c)

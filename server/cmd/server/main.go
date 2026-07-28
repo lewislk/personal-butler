@@ -59,6 +59,11 @@ func main() {
 	sync := r.Group("/sync", middleware.AuthHeader(cfg.SyncToken))
 	syncH.Register(sync)
 
+	// /api/devices 不走鉴权：用户首次配置时既无 device id 也无 token，
+	// 仅用于列出已上传过数据的 device 供下拉选择
+	devices := r.Group("/api")
+	syncH.RegisterDeviceList(devices)
+
 	// /api/* Web 表单 CRUD（与 /sync/* 共享同一套鉴权头）
 	api := r.Group("/api", middleware.AuthHeader(cfg.SyncToken))
 	recipeH.Register(api)

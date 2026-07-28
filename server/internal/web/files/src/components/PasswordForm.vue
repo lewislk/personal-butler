@@ -77,6 +77,8 @@ const form = reactive<FormState>(emptyForm())
 watch(
   () => props.password,
   (p) => {
+    // 显式重置 id，避免上一次编辑/新建残留导致下一次新建走 update 分支覆盖旧记录
+    form.id = undefined
     Object.assign(form, emptyForm())
     if (p) {
       form.id = p.id

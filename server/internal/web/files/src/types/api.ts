@@ -35,3 +35,13 @@ export interface SyncInfo {
   dataVersion: number
   totalCount: number
 }
+
+// /api/devices 列表项
+export interface DeviceItem {
+  deviceId: string
+  syncTimestamp: number
+  appVersion: string
+  dataVersion: number
+  // RFC3339 格式
+  updatedAt: string
+}
