@@ -31,6 +31,11 @@ func Register(r *gin.Engine) {
 		panic("web embed: " + err.Error())
 	}
 
+	// / → /web（根路径自动跳转，方便用户直接访问 host:8090）
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/web")
+	})
+
 	// /web → index.html
 	r.GET("/web", func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)

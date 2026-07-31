@@ -285,7 +285,11 @@ final class BackupSyncUseCase {
     /// **Keychain 处理**：
     /// - 恢复前遍历本地 `PasswordAccount` / `OTPAccount`，收集其 Keychain key（不立即删，等 save 成功后再清）
     /// - 恢复时按 CLAUDE.md §5 规范生成新的 `pwd.<uuid>` / `otp.<uuid>` key，UUID 直接复用 @Model.id 保证幂等
-    /// - 若中途失败，已写入的 Keychain 项由 `newKeychainKeys` 记录，回滚时一并清理；旧 Keychain 不动，保留可用
+    /// - **key 会撞**：UUID 复用 @Model.id 意味着"本地已有同一条记录"时，新 key 与旧 key
+    ///   完全相同。所以 save 成功后只删 `old - new` 的差集（否则会把刚写入的明文抹掉），
+    ///   回滚时对撞掉的 key 写回旧值、对纯新增的 key 直接删除
+    /// - 撞 key 的旧值在 `KeychainManager.save`（先 delete 再 add）时就已被覆盖，
+    ///   因此必须在写入前用 `overwrittenKeychain` 备份，回滚才能真正还原
     ///
     /// **未同步的项目**：`AppSetting` 目前未纳入 `SyncPayload.setting`（AGENTS.md §7），
     /// restore 也不动它，保留本地设置。
@@ -299,6 +303,9 @@ final class BackupSyncUseCase {
 
         // 2. 追踪本次 restore 新写入的 Keychain key，出错时反向清理
         var newKeychainKeys: [String] = []
+        // 被覆盖的旧值备份（key → 旧明文）。`KeychainManager.save` 是先 delete 再 add，
+        // 撞 key 时旧值当场就没了，只删 key 无法还原，必须靠这份快照写回。
+        var overwrittenKeychain: [String: String] = [:]
 
         // 3. 关闭 autosave，保证 clear + rebuild 是原子的
         let originalAutosave = context.autosaveEnabled
@@ -310,18 +317,32 @@ final class BackupSyncUseCase {
             try clearAllSyncedEntities()
 
             // 5. 按 payload 重建
-            try rebuild(from: payload.data, newKeychainKeys: &newKeychainKeys)
+            try rebuild(from: payload.data,
+                        newKeychainKeys: &newKeychainKeys,
+                        overwrittenKeychain: &overwrittenKeychain)
 
             // 6. 提交
             try context.save()
 
             // 7. save 成功后再删旧 Keychain key（保证恢复失败时旧密码还能用）
-            oldKeychainKeys.forEach { KeychainManager.delete($0) }
+            //
+            // 必须排除本次 restore 刚写入的 key：新 key 由 payload 里的 id 推导
+            // （`otp.<uuid>` / `pwd.<uuid>`），同一条记录 restore 前后 key 完全相同。
+            // 无脑删 oldKeychainKeys 会把刚写进去的明文/密钥一起抹掉，表现为
+            // 2FA 验证码恒为 "------"、密码明文变空。
+            let staleKeys = Set(oldKeychainKeys).subtracting(newKeychainKeys)
+            staleKeys.forEach { KeychainManager.delete($0) }
         } catch {
             // 回滚 SwiftData 变更
             context.rollback()
-            // 已经写进 Keychain 的新 key 反向清掉
-            newKeychainKeys.forEach { KeychainManager.delete($0) }
+            // 纯新增的 key 删掉；覆盖了旧值的 key 写回原明文，避免回滚后密码/密钥丢失
+            for key in newKeychainKeys {
+                if let old = overwrittenKeychain[key] {
+                    KeychainManager.save(old, for: key)
+                } else {
+                    KeychainManager.delete(key)
+                }
+            }
             throw error
         }
     }
@@ -352,8 +373,11 @@ final class BackupSyncUseCase {
     }
 
     /// 按 SyncData 各 list 反序列化并 insert 到 context。
-    /// Keychain 敏感明文先写 Keychain，把新 key 记入 `newKeychainKeys` 供出错回滚。
-    private func rebuild(from data: SyncData, newKeychainKeys: inout [String]) throws {
+    /// Keychain 敏感明文先写 Keychain，把新 key 记入 `newKeychainKeys` 供出错回滚；
+    /// 若该 key 已存在（restore 前后 UUID 相同），旧明文先备份进 `overwrittenKeychain`。
+    private func rebuild(from data: SyncData,
+                         newKeychainKeys: inout [String],
+                         overwrittenKeychain: inout [String: String]) throws {
         for x in data.todoList {
             guard let uuid = UUID(uuidString: x.id) else { continue }
             let m = TodoItem(
@@ -411,6 +435,7 @@ final class BackupSyncUseCase {
             guard let uuid = UUID(uuidString: x.id) else { continue }
             // Keychain key 规范：pwd.<uuid>，UUID 直接复用 @Model.id，保证幂等（同一记录多次恢复不产生孤儿 key）
             let key = "pwd." + uuid.uuidString
+            if let old = KeychainManager.load(key) { overwrittenKeychain[key] = old }
             KeychainManager.save(x.passwordPlain, for: key)
             newKeychainKeys.append(key)
             let m = PasswordAccount(
@@ -427,6 +452,7 @@ final class BackupSyncUseCase {
         for x in data.otpList {
             guard let uuid = UUID(uuidString: x.id) else { continue }
             let key = "otp." + uuid.uuidString
+            if let old = KeychainManager.load(key) { overwrittenKeychain[key] = old }
             KeychainManager.save(x.secretPlain, for: key)
             newKeychainKeys.append(key)
             let m = OTPAccount(
