@@ -35,14 +35,7 @@ struct LanSyncView: View {
                         .onChange(of: token) { _, v in AppSyncConfig.token = v }
                 }
 
-                Section("设备") {
-                    HStack {
-                        Text("设备 ID")
-                        Spacer()
-                        Text(AppSyncConfig.deviceID.prefix(8) + "…")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(AppColorTheme.textSub)
-                    }
+                Section {
                     HStack {
                         Text("上次同步")
                         Spacer()
@@ -178,7 +171,7 @@ struct LanSyncView: View {
         } catch BackupSyncUseCase.SyncError.inProgress {
             message = "上一次同步还在进行，请稍后重试"
         } catch BackupSyncUseCase.SyncError.noBackup {
-            message = "服务器上还没有该设备的备份，请先上传一次"
+            message = "服务器上还没有备份，请先上传一次"
         } catch {
             message = "恢复失败：\(error.localizedDescription)"
         }

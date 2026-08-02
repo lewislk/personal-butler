@@ -16,10 +16,10 @@ import (
 // 与 sync.go 的全量覆盖语义不同：本服务按单条 recipe 增删改，方便 Web 表单
 // 直接写入 DB。iOS 客户端后续走 /sync/download → restore 即可把数据拉到本地。
 //
-// 重要约定：
-//   - 所有写入都关联到调用方提交的 deviceID（与 iOS X-Device-ID 同一命名空间）。
+// 重要约定（v6 起）：
+//   - 不再依赖 device_id 维度，所有数据全局共享（单用户单设备场景）。
 //   - 任何一次成功写入后，都会 upsert sync_meta 行，确保 iOS 客户端能 download
-//     （download 在 sync_meta 行不存在时会返回 ErrNoBackup）。
+//     （download 在 sync_meta 行不存在时 / sync_timestamp=0 时会返回 ErrNoBackup）。
 //   - dataVersion 固定为当前 schema 版本（与 SyncPayload.swift 同步递增）。
 type RecipeService struct {
 	db *gorm.DB
@@ -28,7 +28,7 @@ type RecipeService struct {
 func NewRecipeService(db *gorm.DB) *RecipeService { return &RecipeService{db: db} }
 
 // 当前 schema 版本，与 iOS 端 SyncMeta.dataVersion 保持一致。
-const currentDataVersion = 5
+const currentDataVersion = 6
 
 // Web 表单 CRUD 专用错误。
 var (
@@ -78,15 +78,15 @@ type RecipeIngredientInput struct {
 	Order  int     `json:"order"`
 }
 
-// List 返回该 device 下所有菜谱（含 ingredients）。
+// List 返回所有菜谱（含 ingredients）。
 // cook_recipe 表无 created_at，按 name 排序展示。
-func (s *RecipeService) List(deviceID string) ([]dto.SyncRecipeDTO, error) {
+func (s *RecipeService) List() ([]dto.SyncRecipeDTO, error) {
 	var recipes []model.Recipe
-	if err := s.db.Where("device_id = ?", deviceID).Order("name asc").Find(&recipes).Error; err != nil {
+	if err := s.db.Order("name asc").Find(&recipes).Error; err != nil {
 		return nil, err
 	}
 	var ings []model.CookIngredient
-	if err := s.db.Where("device_id = ?", deviceID).Order("order_idx asc").Find(&ings).Error; err != nil {
+	if err := s.db.Order("order_idx asc").Find(&ings).Error; err != nil {
 		return nil, err
 	}
 	byRecipe := make(map[string][]dto.SyncIngredientDTO, len(recipes))
@@ -115,16 +115,16 @@ func (s *RecipeService) List(deviceID string) ([]dto.SyncRecipeDTO, error) {
 }
 
 // Get 取单个菜谱（含 ingredients）。
-func (s *RecipeService) Get(deviceID, id string) (*dto.SyncRecipeDTO, error) {
+func (s *RecipeService) Get(id string) (*dto.SyncRecipeDTO, error) {
 	var r model.Recipe
-	if err := s.db.Where("device_id = ? AND id = ?", deviceID, id).First(&r).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&r).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrRecipeNotFound
 		}
 		return nil, err
 	}
 	var ings []model.CookIngredient
-	if err := s.db.Where("device_id = ? AND recipe_id = ?", deviceID, id).
+	if err := s.db.Where("recipe_id = ?", id).
 		Order("order_idx asc").Find(&ings).Error; err != nil {
 		return nil, err
 	}
@@ -146,10 +146,10 @@ func (s *RecipeService) Get(deviceID, id string) (*dto.SyncRecipeDTO, error) {
 }
 
 // Create 新建菜谱 + 食材子项。同一个事务，失败一起回滚。
-func (s *RecipeService) Create(deviceID string, in *RecipeInput) (string, error) {
+func (s *RecipeService) Create(in *RecipeInput) (string, error) {
 	recipeID := newUUID()
 	r := model.Recipe{
-		DeviceID: deviceID, ID: recipeID,
+		ID: recipeID,
 		Name: in.Name, Emoji: in.Emoji, Difficulty: in.Difficulty,
 		Minutes: in.Minutes, Category: in.Category,
 		IngredientsLegacyRaw: in.IngredientsLegacyRaw,
@@ -160,10 +160,10 @@ func (s *RecipeService) Create(deviceID string, in *RecipeInput) (string, error)
 		if err := tx.Create(&r).Error; err != nil {
 			return err
 		}
-		if err := insertIngredients(tx, deviceID, recipeID, in.Ingredients); err != nil {
+		if err := insertIngredients(tx, recipeID, in.Ingredients); err != nil {
 			return err
 		}
-		return upsertSyncMeta(tx, deviceID)
+		return upsertSyncMeta(tx)
 	})
 	if err != nil {
 		return "", err
@@ -174,13 +174,13 @@ func (s *RecipeService) Create(deviceID string, in *RecipeInput) (string, error)
 // Update 全量更新 recipe + 替换其 ingredients。
 // ingredients 替换语义：先 DELETE 旧 ingredients → 再 INSERT 新的（与 iOS
 // CookRecipe.ingredients cascade deleteRule 一致）。
-func (s *RecipeService) Update(deviceID, id string, in *RecipeInput) error {
+func (s *RecipeService) Update(id string, in *RecipeInput) error {
 	if in.ID == nil || *in.ID != id {
 		return ErrRecipeIDMismatch
 	}
 	// 显式检查存在性，便于返回 404 而不是 silent no-op
 	var exists model.Recipe
-	if err := s.db.Where("device_id = ? AND id = ?", deviceID, id).First(&exists).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&exists).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrRecipeNotFound
 		}
@@ -199,49 +199,49 @@ func (s *RecipeService) Update(deviceID, id string, in *RecipeInput) error {
 			"icon_image_base64":      in.IconImageBase64,
 		}
 		if err := tx.Model(&model.Recipe{}).
-			Where("device_id = ? AND id = ?", deviceID, id).
+			Where("id = ?", id).
 			Updates(updates).Error; err != nil {
 			return err
 		}
 		// 替换 ingredients
-		if err := tx.Where("device_id = ? AND recipe_id = ?", deviceID, id).
+		if err := tx.Where("recipe_id = ?", id).
 			Delete(&model.CookIngredient{}).Error; err != nil {
 			return err
 		}
-		if err := insertIngredients(tx, deviceID, id, in.Ingredients); err != nil {
+		if err := insertIngredients(tx, id, in.Ingredients); err != nil {
 			return err
 		}
-		return upsertSyncMeta(tx, deviceID)
+		return upsertSyncMeta(tx)
 	})
 	return err
 }
 
 // Delete 删除 recipe + 其关联 ingredients（ingredients 在事务里显式删除，
-// 不依赖外键 cascade；与 clearDevice 全表清空语义一致）。
-func (s *RecipeService) Delete(deviceID, id string) error {
+// 不依赖外键 cascade；与 clearAll 全表清空语义一致）。
+func (s *RecipeService) Delete(id string) error {
 	var exists model.Recipe
-	if err := s.db.Where("device_id = ? AND id = ?", deviceID, id).First(&exists).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&exists).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrRecipeNotFound
 		}
 		return err
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("device_id = ? AND recipe_id = ?", deviceID, id).
+		if err := tx.Where("recipe_id = ?", id).
 			Delete(&model.CookIngredient{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("device_id = ? AND id = ?", deviceID, id).
+		if err := tx.Where("id = ?", id).
 			Delete(&model.Recipe{}).Error; err != nil {
 			return err
 		}
-		return upsertSyncMeta(tx, deviceID)
+		return upsertSyncMeta(tx)
 	})
 }
 
 // ---------- 内部辅助 ----------
 
-func insertIngredients(tx *gorm.DB, deviceID, recipeID string, ins []RecipeIngredientInput) error {
+func insertIngredients(tx *gorm.DB, recipeID string, ins []RecipeIngredientInput) error {
 	if len(ins) == 0 {
 		return nil
 	}
@@ -253,25 +253,24 @@ func insertIngredients(tx *gorm.DB, deviceID, recipeID string, ins []RecipeIngre
 			ingID = *in.ID
 		}
 		rows = append(rows, model.CookIngredient{
-			DeviceID: deviceID, ID: ingID,
-			RecipeID: recipeID, Name: in.Name, Amount: in.Amount,
+			ID: ingID, RecipeID: recipeID, Name: in.Name, Amount: in.Amount,
 			OrderIdx: in.Order,
 		})
 	}
-	return tx.CreateInBatches(rows, 200).Error
+	return tx.Select("*").CreateInBatches(rows, 200).Error
 }
 
 // upsertSyncMeta 确保 sync_meta 行存在并刷新时间戳；这样 iOS 客户端即使
 // 从未上传过，也能直接 download 到 Web 表单录入的数据。
-func upsertSyncMeta(tx *gorm.DB, deviceID string) error {
+func upsertSyncMeta(tx *gorm.DB) error {
 	now := time.Now().Unix()
 	meta := model.SyncMetaRow{
-		DeviceID:      deviceID,
+		ID:            1,
 		SyncTimestamp: now,
 		AppVersion:    "web-form",
 		DataVersion:   currentDataVersion,
 		UpdatedAt:     time.Now(),
 	}
-	// GORM Save 对复合主键 / 单主键都走 upsert 语义
+	// GORM Save 对单主键走 upsert 语义
 	return tx.Save(&meta).Error
 }

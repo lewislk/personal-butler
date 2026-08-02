@@ -73,13 +73,14 @@ App 唯一的 SwiftData 容器，一次性注册全部 10 个 `@Model`（Todo/Sc
 
 ### AppSyncConfig
 
-用 UserDefaults 存三个 key，专供 `LanSyncView` 与 `BackupSyncUseCase` 读取：
+用 UserDefaults 存两个 key，专供 `LanSyncView` 与 `BackupSyncUseCase` 读取：
 
 | Key | 用途 |
 |-----|------|
 | `sync.server.host` | 服务器 IP（不含端口） |
 | `sync.token` | 静态同步密钥 `X-Sync-Token` |
-| `sync.deviceId` | 首次调用时生成的稳定 UUID，作为 `X-Device-ID` |
+
+> v6 起单用户单设备，移除 `sync.deviceId` 与 `X-Device-ID` 头。
 
 端口固定 `defaultPort = 8090`。对应代码：`App/AppSyncConfig.swift`。
 
@@ -101,7 +102,7 @@ App 唯一的 SwiftData 容器，一次性注册全部 10 个 `@Model`（Todo/Sc
 | 全局环境 | `personal-butler/App/AppEnvironment.swift` | `dataChanged` / `isUnlocked` / `lastSyncTime` / `markSynced()` |
 | 根路由 | `personal-butler/App/AppRouter.swift` | `@Published var path: [String]` + `open / back / popToRoot` |
 | Tab 枚举 | `personal-butler/App/AppTab.swift` | `enum AppTab { home, allApp, mine }` |
-| 同步配置 | `personal-butler/App/AppSyncConfig.swift` | UserDefaults 读写；`deviceID` 首次访问时生成 UUID 落库 |
+| 同步配置 | `personal-butler/App/AppSyncConfig.swift` | UserDefaults 读写（host + token，v6 起无 deviceID） |
 | 主题 | `personal-butler/App/AppColorTheme.swift` | 全部主色常量 |
 | 根视图 | `personal-butler/Presentation/Views/RootView.swift` | 常驻 `NavigationStack(path:)`，root = `MainTabView`，`.navigationDestination(for: String.self)` → `AppModuleRouter.destination` |
 | 模块工厂 | `personal-butler/Presentation/Views/AppModuleRouter.swift` | 模块 id → 子页面视图；未注册 id 走 `ComingSoonView` |
@@ -199,15 +200,14 @@ App 唯一的 SwiftData 容器，一次性注册全部 10 个 `@Model`（Todo/Sc
 
 **业务规则：**
 
-- 服务器地址 / 密钥用户可修改；`deviceID` 稳定永不变
+- 服务器地址 / 密钥用户可修改（v6 起无 `deviceID`）
 - 无值时返回空字符串（业务层可据此判断"未配置"）
 - 所有 UserDefaults 键名统一以 `sync.` 前缀
 
 **实现逻辑：**
 
 1. `host` / `token`：`UserDefaults.string(forKey:) ?? ""` + `set` 写回
-2. `deviceID`：首次读取时若无值则 `UUID().uuidString` 并 `set` 落库，之后永远返回相同 UUID
-3. `defaultPort` 硬编码 `8090`，不走 UserDefaults
+2. `defaultPort` 硬编码 `8090`，不走 UserDefaults
 
 ### 数据变更广播
 

@@ -98,6 +98,7 @@ struct PersonalButlerApp: App {
         }.value
 
         SeedData.ensureSeeded(in: container.mainContext)
+        migrateKeychainToSwiftData(context: container.mainContext)
         migrateCookIngredients(context: container.mainContext)
         cleanupFinishedCookTasks(context: container.mainContext)
 
@@ -152,5 +153,44 @@ struct PersonalButlerApp: App {
             changed = true
         }
         if changed { try? context.save() }
+    }
+
+    /// 一次性迁移：把 Keychain 里的密码明文 / TOTP 密钥搬到 SwiftData 新字段。
+    ///
+    /// 背景：v5 之前密码明文 / OTP 密钥只存 Keychain，SwiftData 只存 key。
+    /// 同步时 `buildPayload` 现取 Keychain，一旦 Keychain 因模拟器重置 / restore
+    /// 写空串等原因返回 nil，上传的 `passwordPlain` 就变成空串，服务端 GORM
+    /// 零值跳过落 NULL，download 又把空串写回 Keychain，形成自循环空值。
+    ///
+    /// 改造后明文直接落 SwiftData，Keychain 不再参与同步链路。本函数在冷启时
+    /// 把老用户 Keychain 里的明文回填到新字段，幂等：`passwordPlain` 已有值则跳过。
+    @MainActor
+    private func migrateKeychainToSwiftData(context: ModelContext) {
+        var migratedKeys: [String] = []
+        var changed = false
+
+        let pwds = (try? context.fetch(FetchDescriptor<PasswordAccount>())) ?? []
+        for p in pwds {
+            guard p.passwordPlain.isEmpty, !p.passwordKeychainKey.isEmpty else { continue }
+            if let plain = KeychainManager.load(p.passwordKeychainKey), !plain.isEmpty {
+                p.passwordPlain = plain
+                migratedKeys.append(p.passwordKeychainKey)
+                changed = true
+            }
+        }
+
+        let otps = (try? context.fetch(FetchDescriptor<OTPAccount>())) ?? []
+        for o in otps {
+            guard o.secretPlain.isEmpty, !o.secretKeychainKey.isEmpty else { continue }
+            if let secret = KeychainManager.load(o.secretKeychainKey), !secret.isEmpty {
+                o.secretPlain = secret
+                migratedKeys.append(o.secretKeychainKey)
+                changed = true
+            }
+        }
+
+        if changed { try? context.save() }
+        // 迁移成功后清理 Keychain 旧条目，避免残留孤儿密钥
+        migratedKeys.forEach { KeychainManager.delete($0) }
     }
 }

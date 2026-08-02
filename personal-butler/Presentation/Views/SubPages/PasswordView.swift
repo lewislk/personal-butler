@@ -66,8 +66,7 @@ struct PasswordView: View {
             Button("取消", role: .cancel) { pendingDeletePwd = nil }
             Button("删除", role: .destructive) {
                 if let p = pendingDeletePwd {
-                    // 敏感数据：先清 Keychain 明文再删 SwiftData 行
-                    KeychainManager.delete(p.passwordKeychainKey)
+                    // 明文随 SwiftData 记录一起删除（不再走 Keychain）
                     context.delete(p)
                     try? context.save()
                 }
@@ -83,7 +82,7 @@ struct PasswordView: View {
             Button("取消", role: .cancel) { pendingDeleteOTP = nil }
             Button("删除", role: .destructive) {
                 if let o = pendingDeleteOTP {
-                    KeychainManager.delete(o.secretKeychainKey)
+                    // 明文随 SwiftData 记录一起删除（不再走 Keychain）
                     context.delete(o)
                     try? context.save()
                 }
@@ -242,14 +241,12 @@ private struct PasswordCardView: View {
                 .padding(.top, 10)
             Divider().background(Color.black.opacity(0.06))
             row(label: "密码",
-                value: reveal ? (KeychainManager.load(account.passwordKeychainKey) ?? "") : "••••••••",
+                value: reveal ? account.passwordPlain : "••••••••",
                 hidden: !reveal,
                 trailingIcons: [
                     (reveal ? "eye.slash" : "eye", { reveal.toggle() }),
                     ("doc.on.doc", {
-                        if let plain = KeychainManager.load(account.passwordKeychainKey) {
-                            onCopy(plain, "密码")
-                        }
+                        onCopy(account.passwordPlain, "密码")
                     })
                 ])
         }
@@ -358,8 +355,11 @@ private struct OTPCodeCell: View {
     }
 
     private func refresh() {
-        guard let secret = KeychainManager.load(account.secretKeychainKey) else { return }
-        code = OTPGenerator.totp(secretBase32: secret, period: account.period, digits: account.digits)
+        guard !account.secretPlain.isEmpty else {
+            code = "------"
+            return
+        }
+        code = OTPGenerator.totp(secretBase32: account.secretPlain, period: account.period, digits: account.digits)
         remaining = OTPGenerator.remainingSeconds(period: account.period)
     }
 }
@@ -384,7 +384,7 @@ struct EditPasswordSheet: View {
         _platform = State(initialValue: account?.platform ?? "")
         _accountName = State(initialValue: account?.account ?? "")
         // 编辑态预填明文，便于查看/修改；未修改直接保存则原样写回
-        _password = State(initialValue: account.flatMap { KeychainManager.load($0.passwordKeychainKey) } ?? "")
+        _password = State(initialValue: account?.passwordPlain ?? "")
         _category = State(initialValue: account?.category ?? .social)
     }
 
@@ -450,18 +450,16 @@ struct EditPasswordSheet: View {
     private func save() {
         let finalPlatform = platform.isEmpty ? "未命名" : platform
         if let p = account {
-            KeychainManager.save(password, for: p.passwordKeychainKey)
             p.platform = finalPlatform
             p.account = accountName
             p.typeText = category.label
             p.categoryRaw = category.rawValue
+            p.passwordPlain = password
             p.updatedAt = .init()
         } else {
-            let key = "pwd." + UUID().uuidString
-            KeychainManager.save(password, for: key)
             let p = PasswordAccount(platform: finalPlatform,
                                     account: accountName, typeText: category.label,
-                                    category: category, passwordKeychainKey: key)
+                                    category: category, passwordPlain: password)
             context.insert(p)
         }
         try? context.save()
@@ -518,7 +516,7 @@ struct EditOTPSheet: View {
                         .autocorrectionDisabled(true)
                 }
                 Section {
-                    Text("密钥通过扫码添加后不可修改，仅存于 iOS Keychain。如需替换密钥，请删除后重新扫码添加。")
+                    Text("密钥通过扫码添加后不可修改，仅存于本机 SwiftData。如需替换密钥，请删除后重新扫码添加。")
                         .font(.system(size: 12))
                         .foregroundStyle(AppColorTheme.textSub)
                 }
@@ -645,11 +643,9 @@ struct OTPScanSheet: View {
             showError("链接不是有效的 otpauth 二维码")
             return
         }
-        let key = "otp." + UUID().uuidString
-        KeychainManager.save(parsed.secretBase32, for: key)
         let o = OTPAccount(issuer: parsed.issuer,
                            accountName: parsed.accountName,
-                           secretKeychainKey: key,
+                           secretPlain: parsed.secretBase32,
                            period: parsed.period,
                            digits: parsed.digits)
         context.insert(o)

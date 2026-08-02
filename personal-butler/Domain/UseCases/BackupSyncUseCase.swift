@@ -11,12 +11,11 @@ final class BackupSyncUseCase {
     let context: ModelContext
     init(context: ModelContext) { self.context = context }
 
-    /// 组装完整同步包（SwiftData + Keychain 敏感数据）
+    /// 组装完整同步包（明文敏感数据已直接落 SwiftData，不再走 Keychain）
     func buildPayload() throws -> SyncPayload {
-        let meta = SyncMeta(deviceId: AppSyncConfig.deviceID,
-                            syncTimestamp: Int64(Date().timeIntervalSince1970),
+        let meta = SyncMeta(syncTimestamp: Int64(Date().timeIntervalSince1970),
                             appVersion: "1.0.0",
-                            dataVersion: 5)
+                            dataVersion: 6)
 
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         let schedules = (try? context.fetch(FetchDescriptor<ScheduleEvent>())) ?? []
@@ -63,14 +62,14 @@ final class BackupSyncUseCase {
                 SyncPasswordDTO(id: $0.id.uuidString, platform: $0.platform,
                                 account: $0.account, typeText: $0.typeText,
                                 category: $0.categoryRaw,
-                                passwordPlain: KeychainManager.load($0.passwordKeychainKey) ?? "",
+                                passwordPlain: $0.passwordPlain,
                                 updatedAt: $0.updatedAt.timeIntervalSince1970,
                                 isDemo: $0.isDemo)
             },
             otpList: otps.map {
                 SyncOTPDTO(id: $0.id.uuidString, issuer: $0.issuer,
                            accountName: $0.accountName,
-                           secretPlain: KeychainManager.load($0.secretKeychainKey) ?? "",
+                           secretPlain: $0.secretPlain,
                            period: $0.period, digits: $0.digits, order: $0.order,
                            isDemo: $0.isDemo)
             },
@@ -138,11 +137,11 @@ final class BackupSyncUseCase {
         case serverEmpty
         case network(String)
         case decode
-        /// 服务端返回 code=2003：同一 device 已有一次 upload/clear 事务在跑。
+        /// 服务端返回 code=2003：已有一次 upload/clear 事务在跑。
         /// 客户端应提示用户"上一次同步还在进行"，稍后重试。
         case inProgress
-        /// 服务端返回 code=2002：该 device 尚未在服务端有过 upload 记录。
-        /// 常见于首次使用、切换到新设备、或用户主动 clear 过之后。
+        /// 服务端返回 code=2002：尚未在服务端有过 upload 记录。
+        /// 常见于首次使用、或用户主动 clear 过之后。
         case noBackup
         /// 其它非零 code 的兜底：透传服务端 msg，方便排障。
         case server(code: Int, msg: String)
@@ -152,7 +151,7 @@ final class BackupSyncUseCase {
             case .network(let m): return "网络错误：\(m)"
             case .decode: return "服务端返回数据无法解析"
             case .inProgress: return "上一次同步还在进行，请稍后重试"
-            case .noBackup: return "服务器上还没有该设备的备份，请先上传一次"
+            case .noBackup: return "服务器上还没有备份，请先上传一次"
             case .server(let code, let msg): return "服务端错误（\(code)）：\(msg)"
             }
         }
@@ -174,7 +173,6 @@ final class BackupSyncUseCase {
         req.httpMethod = method
         req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue(AppSyncConfig.deviceID, forHTTPHeaderField: "X-Device-ID")
         req.setValue(AppSyncConfig.token, forHTTPHeaderField: "X-Sync-Token")
         return req
     }
@@ -273,7 +271,7 @@ final class BackupSyncUseCase {
         return payload
     }
 
-    /// 覆盖式恢复到本地：先清空所有 @Model（含关联的 Keychain 敏感项），再按 payload 批量重建。
+    /// 覆盖式恢复到本地：先清空所有 @Model，再按 payload 批量重建。
     ///
     /// 语义对齐服务端 `/sync/upload`（DELETE + INSERT）。整个过程在同一个
     /// `ModelContext` 事务里，最后一次 `context.save()`；中途抛错则 `context.rollback()`
@@ -282,67 +280,24 @@ final class BackupSyncUseCase {
     /// **autosave 保护**：restore 期间关闭 `context.autosaveEnabled`，避免 clear 完 SwiftUI
     /// 让出主线程时 autosave 提前落盘导致 rollback 撤不回。整个 restore 结束再恢复原值。
     ///
-    /// **Keychain 处理**：
-    /// - 恢复前遍历本地 `PasswordAccount` / `OTPAccount`，收集其 Keychain key（不立即删，等 save 成功后再清）
-    /// - 恢复时按 CLAUDE.md §5 规范生成新的 `pwd.<uuid>` / `otp.<uuid>` key，UUID 直接复用 @Model.id 保证幂等
-    /// - **key 会撞**：UUID 复用 @Model.id 意味着"本地已有同一条记录"时，新 key 与旧 key
-    ///   完全相同。所以 save 成功后只删 `old - new` 的差集（否则会把刚写入的明文抹掉），
-    ///   回滚时对撞掉的 key 写回旧值、对纯新增的 key 直接删除
-    /// - 撞 key 的旧值在 `KeychainManager.save`（先 delete 再 add）时就已被覆盖，
-    ///   因此必须在写入前用 `overwrittenKeychain` 备份，回滚才能真正还原
+    /// **敏感数据**：密码明文 / TOTP 密钥已直接落 SwiftData（`passwordPlain` / `secretPlain`），
+    /// 与其它字段一起随记录 insert / delete。不再需要单独的 Keychain 备份/回滚逻辑，
+    /// `context.rollback()` 一次就能完整还原。
     ///
     /// **未同步的项目**：`AppSetting` 目前未纳入 `SyncPayload.setting`（AGENTS.md §7），
     /// restore 也不动它，保留本地设置。
     func restore(_ payload: SyncPayload) throws {
-        // 1. 收集要清理的 Keychain key（在 delete SwiftData 前拿到，否则数据没了就找不着 key 了）
-        let existingPwds = (try? context.fetch(FetchDescriptor<PasswordAccount>())) ?? []
-        let existingOTPs = (try? context.fetch(FetchDescriptor<OTPAccount>())) ?? []
-        let oldKeychainKeys: [String] =
-            existingPwds.map { $0.passwordKeychainKey }
-            + existingOTPs.map { $0.secretKeychainKey }
-
-        // 2. 追踪本次 restore 新写入的 Keychain key，出错时反向清理
-        var newKeychainKeys: [String] = []
-        // 被覆盖的旧值备份（key → 旧明文）。`KeychainManager.save` 是先 delete 再 add，
-        // 撞 key 时旧值当场就没了，只删 key 无法还原，必须靠这份快照写回。
-        var overwrittenKeychain: [String: String] = [:]
-
-        // 3. 关闭 autosave，保证 clear + rebuild 是原子的
+        // 关闭 autosave，保证 clear + rebuild 是原子的
         let originalAutosave = context.autosaveEnabled
         context.autosaveEnabled = false
         defer { context.autosaveEnabled = originalAutosave }
 
         do {
-            // 4. 清空所有可同步的 @Model（不动 AppSetting）
             try clearAllSyncedEntities()
-
-            // 5. 按 payload 重建
-            try rebuild(from: payload.data,
-                        newKeychainKeys: &newKeychainKeys,
-                        overwrittenKeychain: &overwrittenKeychain)
-
-            // 6. 提交
+            try rebuild(from: payload.data)
             try context.save()
-
-            // 7. save 成功后再删旧 Keychain key（保证恢复失败时旧密码还能用）
-            //
-            // 必须排除本次 restore 刚写入的 key：新 key 由 payload 里的 id 推导
-            // （`otp.<uuid>` / `pwd.<uuid>`），同一条记录 restore 前后 key 完全相同。
-            // 无脑删 oldKeychainKeys 会把刚写进去的明文/密钥一起抹掉，表现为
-            // 2FA 验证码恒为 "------"、密码明文变空。
-            let staleKeys = Set(oldKeychainKeys).subtracting(newKeychainKeys)
-            staleKeys.forEach { KeychainManager.delete($0) }
         } catch {
-            // 回滚 SwiftData 变更
             context.rollback()
-            // 纯新增的 key 删掉；覆盖了旧值的 key 写回原明文，避免回滚后密码/密钥丢失
-            for key in newKeychainKeys {
-                if let old = overwrittenKeychain[key] {
-                    KeychainManager.save(old, for: key)
-                } else {
-                    KeychainManager.delete(key)
-                }
-            }
             throw error
         }
     }
@@ -373,11 +328,9 @@ final class BackupSyncUseCase {
     }
 
     /// 按 SyncData 各 list 反序列化并 insert 到 context。
-    /// Keychain 敏感明文先写 Keychain，把新 key 记入 `newKeychainKeys` 供出错回滚；
-    /// 若该 key 已存在（restore 前后 UUID 相同），旧明文先备份进 `overwrittenKeychain`。
-    private func rebuild(from data: SyncData,
-                         newKeychainKeys: inout [String],
-                         overwrittenKeychain: inout [String: String]) throws {
+    /// 敏感明文（密码 / TOTP 密钥）直接写到 `passwordPlain` / `secretPlain` 字段，
+    /// 与记录一起 insert，回滚时由 `context.rollback()` 统一撤销。
+    private func rebuild(from data: SyncData) throws {
         for x in data.todoList {
             guard let uuid = UUID(uuidString: x.id) else { continue }
             let m = TodoItem(
@@ -433,16 +386,11 @@ final class BackupSyncUseCase {
 
         for x in data.passwordList {
             guard let uuid = UUID(uuidString: x.id) else { continue }
-            // Keychain key 规范：pwd.<uuid>，UUID 直接复用 @Model.id，保证幂等（同一记录多次恢复不产生孤儿 key）
-            let key = "pwd." + uuid.uuidString
-            if let old = KeychainManager.load(key) { overwrittenKeychain[key] = old }
-            KeychainManager.save(x.passwordPlain, for: key)
-            newKeychainKeys.append(key)
             let m = PasswordAccount(
                 id: uuid, platform: x.platform, account: x.account,
                 typeText: x.typeText,
                 category: PasswordCategory(rawValue: x.category) ?? .custom,
-                passwordKeychainKey: key,
+                passwordPlain: x.passwordPlain,
                 updatedAt: Date(timeIntervalSince1970: x.updatedAt),
                 isDemo: x.isDemo ?? false
             )
@@ -451,13 +399,9 @@ final class BackupSyncUseCase {
 
         for x in data.otpList {
             guard let uuid = UUID(uuidString: x.id) else { continue }
-            let key = "otp." + uuid.uuidString
-            if let old = KeychainManager.load(key) { overwrittenKeychain[key] = old }
-            KeychainManager.save(x.secretPlain, for: key)
-            newKeychainKeys.append(key)
             let m = OTPAccount(
                 id: uuid, issuer: x.issuer, accountName: x.accountName,
-                secretKeychainKey: key,
+                secretPlain: x.secretPlain,
                 period: x.period, digits: x.digits, order: x.order,
                 isDemo: x.isDemo ?? false
             )

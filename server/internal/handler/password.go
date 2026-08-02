@@ -28,10 +28,9 @@ func (h *PasswordHandler) Register(rg *gin.RouterGroup) {
 }
 
 func (h *PasswordHandler) List(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
-	out, err := h.svc.List(deviceID)
+	out, err := h.svc.List()
 	if err != nil {
-		log.Printf("[password] list failed device=%s err=%v", deviceID, err)
+		log.Printf("[password] list failed err=%v", err)
 		respond(c, middleware.CodeInternal, "list failed: "+err.Error(), nil)
 		return
 	}
@@ -39,15 +38,14 @@ func (h *PasswordHandler) List(c *gin.Context) {
 }
 
 func (h *PasswordHandler) Get(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
 	id := c.Param("id")
-	out, err := h.svc.Get(deviceID, id)
+	out, err := h.svc.Get(id)
 	if err != nil {
 		if errors.Is(err, service.ErrPasswordNotFound) {
 			respond(c, middleware.CodeNoBackup, "password not found", nil)
 			return
 		}
-		log.Printf("[password] get failed device=%s id=%s err=%v", deviceID, id, err)
+		log.Printf("[password] get failed id=%s err=%v", id, err)
 		respond(c, middleware.CodeInternal, "get failed: "+err.Error(), nil)
 		return
 	}
@@ -58,7 +56,6 @@ func (h *PasswordHandler) Get(c *gin.Context) {
 // Body: service.PasswordInput
 // 返回 data: { "id": "<uuid>" }
 func (h *PasswordHandler) Create(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
 	var in service.PasswordInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		respond(c, middleware.CodeJSONParseError, "invalid json: "+err.Error(), nil)
@@ -76,9 +73,9 @@ func (h *PasswordHandler) Create(c *gin.Context) {
 		respond(c, middleware.CodeJSONParseError, "passwordPlain is required", nil)
 		return
 	}
-	id, err := h.svc.Create(deviceID, &in)
+	id, err := h.svc.Create(&in)
 	if err != nil {
-		log.Printf("[password] create failed device=%s err=%v", deviceID, err)
+		log.Printf("[password] create failed err=%v", err)
 		respond(c, middleware.CodeStoreFailed, "create failed: "+err.Error(), nil)
 		return
 	}
@@ -86,7 +83,6 @@ func (h *PasswordHandler) Create(c *gin.Context) {
 }
 
 func (h *PasswordHandler) Update(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
 	id := c.Param("id")
 	var in service.PasswordInput
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -105,7 +101,7 @@ func (h *PasswordHandler) Update(c *gin.Context) {
 		respond(c, middleware.CodeJSONParseError, "passwordPlain is required", nil)
 		return
 	}
-	if err := h.svc.Update(deviceID, id, &in); err != nil {
+	if err := h.svc.Update(id, &in); err != nil {
 		switch {
 		case errors.Is(err, service.ErrPasswordNotFound):
 			respond(c, middleware.CodeNoBackup, "password not found", nil)
@@ -114,7 +110,7 @@ func (h *PasswordHandler) Update(c *gin.Context) {
 			respond(c, middleware.CodeJSONParseError, err.Error(), nil)
 			return
 		}
-		log.Printf("[password] update failed device=%s id=%s err=%v", deviceID, id, err)
+		log.Printf("[password] update failed id=%s err=%v", id, err)
 		respond(c, middleware.CodeStoreFailed, "update failed: "+err.Error(), nil)
 		return
 	}
@@ -122,14 +118,13 @@ func (h *PasswordHandler) Update(c *gin.Context) {
 }
 
 func (h *PasswordHandler) Delete(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
 	id := c.Param("id")
-	if err := h.svc.Delete(deviceID, id); err != nil {
+	if err := h.svc.Delete(id); err != nil {
 		if errors.Is(err, service.ErrPasswordNotFound) {
 			respond(c, middleware.CodeNoBackup, "password not found", nil)
 			return
 		}
-		log.Printf("[password] delete failed device=%s id=%s err=%v", deviceID, id, err)
+		log.Printf("[password] delete failed id=%s err=%v", id, err)
 		respond(c, middleware.CodeStoreFailed, "delete failed: "+err.Error(), nil)
 		return
 	}

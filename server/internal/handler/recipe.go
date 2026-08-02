@@ -14,7 +14,7 @@ import (
 // 与 /sync/* 全量覆盖语义不同：/api/recipes/* 走单条增删改，
 // 让 Web 端录入不必每次上传全量数据。
 //
-// 鉴权：复用 AuthHeader middleware（X-Device-ID + X-Sync-Token）。
+// 鉴权：复用 AuthHeader middleware（X-Sync-Token）。
 type RecipeHandler struct {
 	svc *service.RecipeService
 }
@@ -34,10 +34,9 @@ func (h *RecipeHandler) Register(rg *gin.RouterGroup) {
 
 // List GET /api/recipes
 func (h *RecipeHandler) List(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
-	out, err := h.svc.List(deviceID)
+	out, err := h.svc.List()
 	if err != nil {
-		log.Printf("[recipe] list failed device=%s err=%v", deviceID, err)
+		log.Printf("[recipe] list failed err=%v", err)
 		respond(c, middleware.CodeInternal, "list failed: "+err.Error(), nil)
 		return
 	}
@@ -46,15 +45,14 @@ func (h *RecipeHandler) List(c *gin.Context) {
 
 // Get GET /api/recipes/:id
 func (h *RecipeHandler) Get(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
 	id := c.Param("id")
-	out, err := h.svc.Get(deviceID, id)
+	out, err := h.svc.Get(id)
 	if err != nil {
 		if errors.Is(err, service.ErrRecipeNotFound) {
 			respond(c, middleware.CodeNoBackup, "recipe not found", nil)
 			return
 		}
-		log.Printf("[recipe] get failed device=%s id=%s err=%v", deviceID, id, err)
+		log.Printf("[recipe] get failed id=%s err=%v", id, err)
 		respond(c, middleware.CodeInternal, "get failed: "+err.Error(), nil)
 		return
 	}
@@ -66,7 +64,6 @@ func (h *RecipeHandler) Get(c *gin.Context) {
 // Body: service.RecipeInput
 // 返回 data: { "id": "<uuid>" }
 func (h *RecipeHandler) Create(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
 	var in service.RecipeInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		respond(c, middleware.CodeJSONParseError, "invalid json: "+err.Error(), nil)
@@ -76,9 +73,9 @@ func (h *RecipeHandler) Create(c *gin.Context) {
 		respond(c, middleware.CodeJSONParseError, "name is required", nil)
 		return
 	}
-	id, err := h.svc.Create(deviceID, &in)
+	id, err := h.svc.Create(&in)
 	if err != nil {
-		log.Printf("[recipe] create failed device=%s err=%v", deviceID, err)
+		log.Printf("[recipe] create failed err=%v", err)
 		respond(c, middleware.CodeStoreFailed, "create failed: "+err.Error(), nil)
 		return
 	}
@@ -89,7 +86,6 @@ func (h *RecipeHandler) Create(c *gin.Context) {
 //
 // Body: service.RecipeInput（id 字段需与 path 一致或为空）
 func (h *RecipeHandler) Update(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
 	id := c.Param("id")
 	var in service.RecipeInput
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -100,7 +96,7 @@ func (h *RecipeHandler) Update(c *gin.Context) {
 		respond(c, middleware.CodeJSONParseError, "name is required", nil)
 		return
 	}
-	if err := h.svc.Update(deviceID, id, &in); err != nil {
+	if err := h.svc.Update(id, &in); err != nil {
 		switch {
 		case errors.Is(err, service.ErrRecipeNotFound):
 			respond(c, middleware.CodeNoBackup, "recipe not found", nil)
@@ -109,7 +105,7 @@ func (h *RecipeHandler) Update(c *gin.Context) {
 			respond(c, middleware.CodeJSONParseError, err.Error(), nil)
 			return
 		}
-		log.Printf("[recipe] update failed device=%s id=%s err=%v", deviceID, id, err)
+		log.Printf("[recipe] update failed id=%s err=%v", id, err)
 		respond(c, middleware.CodeStoreFailed, "update failed: "+err.Error(), nil)
 		return
 	}
@@ -118,14 +114,13 @@ func (h *RecipeHandler) Update(c *gin.Context) {
 
 // Delete DELETE /api/recipes/:id
 func (h *RecipeHandler) Delete(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
 	id := c.Param("id")
-	if err := h.svc.Delete(deviceID, id); err != nil {
+	if err := h.svc.Delete(id); err != nil {
 		if errors.Is(err, service.ErrRecipeNotFound) {
 			respond(c, middleware.CodeNoBackup, "recipe not found", nil)
 			return
 		}
-		log.Printf("[recipe] delete failed device=%s id=%s err=%v", deviceID, id, err)
+		log.Printf("[recipe] delete failed id=%s err=%v", id, err)
 		respond(c, middleware.CodeStoreFailed, "delete failed: "+err.Error(), nil)
 		return
 	}

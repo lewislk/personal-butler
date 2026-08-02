@@ -28,27 +28,8 @@ func (h *SyncHandler) Register(rg *gin.RouterGroup) {
 	rg.DELETE("/clear", h.Clear)
 }
 
-// RegisterDeviceList 挂载 GET /devices 到指定 group。
-// 该 group 不应挂任何鉴权 middleware：用户首次配置时既无 device id 也无 token。
-func (h *SyncHandler) RegisterDeviceList(rg *gin.RouterGroup) {
-	rg.GET("/devices", h.ListDevices)
-}
-
-// ListDevices 返回 sync_meta 表中所有 device 列表，供 Web 配置页下拉选择。
-func (h *SyncHandler) ListDevices(c *gin.Context) {
-	items, err := h.svc.ListDevices()
-	if err != nil {
-		log.Printf("[sync] list devices failed err=%v", err)
-		respond(c, middleware.CodeInternal, "list devices failed: "+err.Error(), nil)
-		return
-	}
-	respond(c, middleware.CodeOK, "ok", items)
-}
-
 // Upload 全量上传：body 是完整 SyncPayload JSON。
 func (h *SyncHandler) Upload(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
-
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		respond(c, middleware.CodeInternal, "read body failed", nil)
@@ -60,17 +41,12 @@ func (h *SyncHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 若客户端在 meta 里带了 deviceId 且与 header 不一致，以 header 为准
-	if payload.SyncMeta.DeviceID == "" {
-		payload.SyncMeta.DeviceID = deviceID
-	}
-
-	if err := h.svc.Upload(deviceID, &payload); err != nil {
+	if err := h.svc.Upload(&payload); err != nil {
 		if errors.Is(err, service.ErrSyncInProgress) {
 			respond(c, middleware.CodeSyncInProgress, "sync in progress, please retry later", nil)
 			return
 		}
-		log.Printf("[sync] upload store failed device=%s err=%v", deviceID, err)
+		log.Printf("[sync] upload store failed err=%v", err)
 		respond(c, middleware.CodeStoreFailed, "store failed: "+err.Error(), nil)
 		return
 	}
@@ -79,27 +55,25 @@ func (h *SyncHandler) Upload(c *gin.Context) {
 
 // Download 返回 SyncPayload 全量。
 func (h *SyncHandler) Download(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
-	payload, err := h.svc.Download(deviceID)
+	payload, err := h.svc.Download()
 	if err != nil {
 		if errors.Is(err, service.ErrNoBackup) {
-			respond(c, middleware.CodeNoBackup, "no backup for this device", nil)
+			respond(c, middleware.CodeNoBackup, "no backup yet", nil)
 			return
 		}
-		log.Printf("[sync] download failed device=%s err=%v", deviceID, err)
+		log.Printf("[sync] download failed err=%v", err)
 		respond(c, middleware.CodeInternal, "download failed: "+err.Error(), nil)
 		return
 	}
 	respond(c, middleware.CodeOK, "ok", payload)
 }
 
-// Info 返回该 device 备份摘要。
+// Info 返回备份摘要。
 func (h *SyncHandler) Info(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
-	info, err := h.svc.Info(deviceID)
+	info, err := h.svc.Info()
 	if err != nil {
 		if errors.Is(err, service.ErrNoBackup) {
-			respond(c, middleware.CodeNoBackup, "no backup for this device", nil)
+			respond(c, middleware.CodeNoBackup, "no backup yet", nil)
 			return
 		}
 		respond(c, middleware.CodeInternal, "info failed: "+err.Error(), nil)
@@ -108,10 +82,9 @@ func (h *SyncHandler) Info(c *gin.Context) {
 	respond(c, middleware.CodeOK, "ok", info)
 }
 
-// Clear 清空该 device 全部数据。
+// Clear 清空全部数据。
 func (h *SyncHandler) Clear(c *gin.Context) {
-	deviceID := middleware.DeviceID(c)
-	if err := h.svc.Clear(deviceID); err != nil {
+	if err := h.svc.Clear(); err != nil {
 		if errors.Is(err, service.ErrSyncInProgress) {
 			respond(c, middleware.CodeSyncInProgress, "sync in progress, please retry later", nil)
 			return

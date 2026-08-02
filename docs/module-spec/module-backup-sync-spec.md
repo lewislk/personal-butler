@@ -9,7 +9,7 @@
 - `SyncPayload` 结构定义与组装（含全部 10 类实体 + Keychain 明文）
 - 本地 JSON 备份：编码 → 临时目录 → `ShareLink`
 - 局域网 HTTP 4 接口：`/sync/upload` / `/sync/download` / `/sync/info` / `/sync/clear`（当前 MVP 仅实现前两个）
-- 服务器配置持久化（IP / Token / DeviceID）
+- 服务器配置持久化（IP / Token，v6 起无 DeviceID）
 - 生物识别门禁（每次操作前）
 - 最近同步时间的展示与更新（`AppEnvironment.lastSyncTime`）
 
@@ -33,7 +33,7 @@ struct SyncPayload: Codable {
 }
 ```
 
-`SyncMeta`：`deviceId / syncTimestamp / appVersion / dataVersion (=4)`
+`SyncMeta`：`syncTimestamp / appVersion / dataVersion (=6)`（v6 起移除 `deviceId`）
 
 `SyncData` 内含 10 个列表 + 1 个 setting map：
 - `todoList / scheduleList / anniversaryList / passwordList / otpList / foodRecordList / cookRecipeList / cartList / noteList / appModuleList / setting`
@@ -47,17 +47,18 @@ struct SyncPayload: Codable {
 | Header | 值 |
 |--------|----|
 | `Content-Type` | `application/json` |
-| `X-Device-ID` | `AppSyncConfig.deviceID`（本机首次生成的稳定 UUID） |
 | `X-Sync-Token` | `AppSyncConfig.token`（用户配置的静态密钥） |
+
+> v6 起单用户单设备，移除 `X-Device-ID` 头；服务端不再按设备隔离，所有数据全局共享。
 
 ### 端点
 
 | Method | Path | 用途 | 已实现 |
 |--------|------|------|--------|
 | POST | `/sync/upload` | 上传本机全量数据 | ✅ |
-| GET | `/sync/download` | 拉取本设备备份 | ✅ |
+| GET | `/sync/download` | 拉取备份 | ✅ |
 | GET | `/sync/info` | 查询备份摘要 | ❌（MVP 未实现） |
-| DELETE | `/sync/clear` | 清空本设备备份 | ❌（MVP 未实现） |
+| DELETE | `/sync/clear` | 清空所有备份 | ❌（MVP 未实现） |
 
 ### AppEnvironment.markSynced()
 
@@ -83,7 +84,7 @@ struct SyncPayload: Codable {
 
 **业务规则：**
 
-- `syncMeta`：`deviceId = AppSyncConfig.deviceID`；`syncTimestamp = Int64(unix)`；`appVersion = "1.0.0"`（硬编码）；`dataVersion = 4`（硬编码）
+- `syncMeta`：`syncTimestamp = Int64(unix)`；`appVersion = "1.0.0"`（硬编码）；`dataVersion = 6`（硬编码，v6 起无 `deviceId` 字段）
 - 扫描全部 `@Model` 表：`Todo / Schedule / Anniversary / Password / OTP / Food / CookRecipe / CookIngredient / CookCart / Note / AppModule`
 - `PasswordAccount / OTPAccount` 需要额外从 Keychain 读明文；读失败以 `""` 兜底不阻断
 - `AppSetting` 当前作为 `setting: [:]` 空 map 占位（MVP 未纳入同步）
@@ -141,7 +142,7 @@ struct SyncPayload: Codable {
 - 请求超时 10 秒
 - POST body 为完整 `SyncPayload` JSON
 - 成功后 `env.markSynced()` 记录时间；UI 展示 "上传成功"
-- **并发保护**：服务端按 `X-Device-ID` 做进程内 `TryLock` 单飞（`sync.Map[deviceID]*sync.Mutex`），上一次 upload/clear 未结束前重复调用会立即回 `code=2003 sync in progress`；客户端 UI 层也应在 `doUpload()` 期间 disabled 按钮做本地防抖
+- **并发保护**：服务端走进程内全局 `TryLock` 单飞（`sync.Mutex`，v6 起单用户单设备不再按 deviceID 分桶），上一次 upload/clear 未结束前重复调用会立即回 `code=2003 sync in progress`；客户端 UI 层也应在 `doUpload()` 期间 disabled 按钮做本地防抖
 
 **实现逻辑：**
 
@@ -161,7 +162,7 @@ struct SyncPayload: Codable {
 3. `makeRequest`:
    - `guard !AppSyncConfig.host.isEmpty else throw serverEmpty`
    - `URL = "http://\(host):\(defaultPort)\(path)"`
-   - 设置 3 个 header + `timeoutInterval = 10`
+   - 设置 2 个 header（`Content-Type` / `X-Sync-Token`）+ `timeoutInterval`
 
 ### 局域网下载 / 恢复
 
@@ -201,8 +202,8 @@ struct SyncPayload: Codable {
 | `.serverEmpty` | `AppSyncConfig.host.isEmpty` | 请先配置同步服务器地址 |
 | `.network(let m)` | 预留网络错误封装（当前未主动抛，`URLSession` 原生错误也会经 `error.localizedDescription` 呈现） | 网络错误：… |
 | `.decode` | download 返回体解码失败 / `data == nil` | 服务端返回数据无法解析 |
-| `.inProgress` | 服务端 `code=2003`：同一 device 已有 upload/clear 事务在跑（`SyncService.deviceLocks` TryLock 失败） | 上一次同步还在进行，请稍后重试 |
-| `.noBackup` | 服务端 `code=2002`：该 device 尚未上传过任何数据 | 服务器上还没有该设备的备份，请先上传一次 |
+| `.inProgress` | 服务端 `code=2003`：已有 upload/clear 事务在跑（`SyncService.writeMu` 全局 TryLock 失败） | 上一次同步还在进行，请稍后重试 |
+| `.noBackup` | 服务端 `code=2002`：尚未上传过任何数据 | 服务器上还没有备份，请先上传一次 |
 | `.server(code, msg)` | 其它非零 code 的兜底（1001/1002/1003/2001/5000） | 服务端错误（\(code)）：\(msg) |
 
 上层统一 catch → `message = "上传失败/恢复失败/导出失败：\(error.localizedDescription)"`
@@ -215,14 +216,13 @@ struct SyncPayload: Codable {
 
 - IP 与 Token 输入后 `.onChange` 立即写回 `AppSyncConfig`（不需要点保存）
 - 端口固定 8090，展示只读
-- 展示当前 DeviceID 的前 8 字符（`+ "…"`）
+- 展示 `lastSyncTime`（v6 起移除 DeviceID 展示行）
 
 **实现逻辑：**
 
 1. `@State host = AppSyncConfig.host`；`.onChange(of: host) { _, v in AppSyncConfig.host = v }`
 2. Token 同上
-3. DeviceID：`AppSyncConfig.deviceID.prefix(8) + "…"`
-4. lastSyncTime：`env.lastSyncTime.map { fmt($0) } ?? "未同步"`
+3. lastSyncTime：`env.lastSyncTime.map { fmt($0) } ?? "未同步"`
 
 ## 5. 参考资料
 
@@ -265,3 +265,12 @@ struct SyncPayload: Codable {
   - 新增 `SyncCartDTO`：`id / recipeId / servings / addedAt`
   - `restore` 用 `recipeMap` 解耦 recipe→cart 重建顺序，避免 cart 引用未建好的 recipe
   - `clearAllSyncedEntities` 显式补 `CookIngredient` / `CookCart`（与 CookRecipe cascade 互为兜底）
+- v6 (2026-08-02): 移除 `device_id` 维度（单用户单设备场景，引入 device_id 反而增加维护成本）
+  - `SyncMeta` 移除 `deviceId` 字段；`dataVersion` 5 → 6
+  - HTTP 头移除 `X-Device-ID`，仅保留 `X-Sync-Token` 鉴权
+  - 服务端所有业务表主键由 `(device_id, id)` 复合主键改为单列 `id` 主键
+  - 服务端 `sync_meta` 改为 `id=1` 单行表（全局共享一行）；并发锁由 `sync.Map[deviceID]*sync.Mutex` 简化为全局 `sync.Mutex`
+  - 服务端移除 `/api/devices` 端点与 `ListDevices` 能力
+  - iOS 端 `AppSyncConfig.deviceID` 属性删除；`LanSyncView` 移除「设备 ID」展示行
+  - Web 配置页移除 Device ID 输入项与设备下拉，`isConfigured` 改为基于 `syncToken` 判断
+  - 旧库升级用 `server/sql/migrate_v5_to_v6_drop_device_id.sql`

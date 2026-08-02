@@ -19,13 +19,4 @@ enum AppSyncConfig {
         get { UserDefaults.standard.string(forKey: syncTokenKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: syncTokenKey) }
     }
-
-    /// 稳定的设备唯一 ID
-    static var deviceID: String {
-        let key = "sync.deviceId"
-        if let v = UserDefaults.standard.string(forKey: key) { return v }
-        let v = UUID().uuidString
-        UserDefaults.standard.set(v, forKey: key)
-        return v
-    }
 }

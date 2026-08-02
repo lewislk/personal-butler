@@ -10,7 +10,9 @@ import (
 )
 
 // PasswordService 提供 Web 表单录入密码所需的 CRUD 能力。
-// 模式与 RecipeService 完全一致：单条增删改，每次写入后 upsert sync_meta。
+//
+// v6 起移除 device_id 维度，所有数据全局共享（单用户单设备场景）。
+// 模式与 RecipeService 一致：单条增删改，每次写入后 upsert sync_meta。
 type PasswordService struct {
 	db *gorm.DB
 }
@@ -34,10 +36,10 @@ type PasswordInput struct {
 	Category      string  `json:"category"`
 }
 
-// List 返回该 device 下所有密码，按 updatedAt 倒序（与 iOS PasswordView 排序一致）。
-func (s *PasswordService) List(deviceID string) ([]dto.SyncPasswordDTO, error) {
+// List 返回所有密码，按 updatedAt 倒序（与 iOS PasswordView 排序一致）。
+func (s *PasswordService) List() ([]dto.SyncPasswordDTO, error) {
 	var rows []model.Password
-	if err := s.db.Where("device_id = ?", deviceID).Order("updated_at desc").Find(&rows).Error; err != nil {
+	if err := s.db.Order("updated_at desc").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]dto.SyncPasswordDTO, 0, len(rows))
@@ -57,9 +59,9 @@ func (s *PasswordService) List(deviceID string) ([]dto.SyncPasswordDTO, error) {
 }
 
 // Get 取单个密码。
-func (s *PasswordService) Get(deviceID, id string) (*dto.SyncPasswordDTO, error) {
+func (s *PasswordService) Get(id string) (*dto.SyncPasswordDTO, error) {
 	var p model.Password
-	if err := s.db.Where("device_id = ? AND id = ?", deviceID, id).First(&p).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&p).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPasswordNotFound
 		}
@@ -78,14 +80,13 @@ func (s *PasswordService) Get(deviceID, id string) (*dto.SyncPasswordDTO, error)
 }
 
 // Create 新建密码。返回新 id。
-func (s *PasswordService) Create(deviceID string, in *PasswordInput) (string, error) {
+func (s *PasswordService) Create(in *PasswordInput) (string, error) {
 	id := newUUID()
 	category := in.Category
 	if category == "" {
 		category = "social"
 	}
 	p := model.Password{
-		DeviceID:      deviceID,
 		ID:            id,
 		Platform:      in.Platform,
 		Account:       in.Account,
@@ -98,7 +99,7 @@ func (s *PasswordService) Create(deviceID string, in *PasswordInput) (string, er
 		if err := tx.Create(&p).Error; err != nil {
 			return err
 		}
-		return upsertSyncMeta(tx, deviceID)
+		return upsertSyncMeta(tx)
 	})
 	if err != nil {
 		return "", err
@@ -107,12 +108,12 @@ func (s *PasswordService) Create(deviceID string, in *PasswordInput) (string, er
 }
 
 // Update 全量更新密码字段。
-func (s *PasswordService) Update(deviceID, id string, in *PasswordInput) error {
+func (s *PasswordService) Update(id string, in *PasswordInput) error {
 	if in.ID == nil || *in.ID != id {
 		return ErrPasswordIDMismatch
 	}
 	var exists model.Password
-	if err := s.db.Where("device_id = ? AND id = ?", deviceID, id).First(&exists).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&exists).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrPasswordNotFound
 		}
@@ -132,29 +133,29 @@ func (s *PasswordService) Update(deviceID, id string, in *PasswordInput) error {
 			"updated_at":     float64(time.Now().Unix()),
 		}
 		if err := tx.Model(&model.Password{}).
-			Where("device_id = ? AND id = ?", deviceID, id).
+			Where("id = ?", id).
 			Updates(updates).Error; err != nil {
 			return err
 		}
-		return upsertSyncMeta(tx, deviceID)
+		return upsertSyncMeta(tx)
 	})
 	return err
 }
 
 // Delete 删除密码。
-func (s *PasswordService) Delete(deviceID, id string) error {
+func (s *PasswordService) Delete(id string) error {
 	var exists model.Password
-	if err := s.db.Where("device_id = ? AND id = ?", deviceID, id).First(&exists).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&exists).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrPasswordNotFound
 		}
 		return err
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("device_id = ? AND id = ?", deviceID, id).
+		if err := tx.Where("id = ?", id).
 			Delete(&model.Password{}).Error; err != nil {
 			return err
 		}
-		return upsertSyncMeta(tx, deviceID)
+		return upsertSyncMeta(tx)
 	})
 }

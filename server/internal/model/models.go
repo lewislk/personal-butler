@@ -2,28 +2,27 @@ package model
 
 import "time"
 
-// 所有业务表都以 (device_id, id) 作为复合主键：
-// - device_id：来自请求头 X-Device-ID，用来把多设备数据隔离开
-// - id：客户端 SwiftData 里那条实体的 UUID（AppModule 是稳定字符串 id）
+// 所有业务表以 `id` 作为单列主键（v6 起移除 device_id 维度，
+// 本应用为单用户单设备场景）。
 //
-// 上传采用「按 device_id 清空 → 批量插入」的全量覆盖语义，
+// 上传采用「全表清空 → 批量插入」的全量覆盖语义，
 // 与客户端「MVP 只支持全量覆盖」的约定一致，也避免了差量合并的复杂度。
 
-// SyncMetaRow 记录每个设备最近一次成功上传的元信息，供 /sync/info 查询。
+// SyncMetaRow 记录最近一次成功上传的元信息，供 /sync/info 查询。
+// 全局单行：id 恒为 1，由 init.sql 初始化占位行，应用层用 GORM Save 走 upsert。
 type SyncMetaRow struct {
-	DeviceID      string `gorm:"primaryKey;size:64" json:"deviceId"`
-	SyncTimestamp int64  `gorm:"not null" json:"syncTimestamp"`
-	AppVersion    string `gorm:"size:32" json:"appVersion"`
-	DataVersion   int    `gorm:"not null" json:"dataVersion"`
-	UpdatedAt     time.Time
+	ID            int       `gorm:"primaryKey;default:1" json:"id"`
+	SyncTimestamp int64     `gorm:"not null" json:"syncTimestamp"`
+	AppVersion    string    `gorm:"size:32" json:"appVersion"`
+	DataVersion   int       `gorm:"not null" json:"dataVersion"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 func (SyncMetaRow) TableName() string { return "sync_meta" }
 
 type Todo struct {
-	DeviceID string   `gorm:"primaryKey;size:64"`
-	ID       string   `gorm:"primaryKey;size:64"`
-	Name     string   `gorm:"size:255"`
+	ID   string   `gorm:"primaryKey;size:64"`
+	Name string   `gorm:"size:255"`
 	Source   string   `gorm:"size:32"`
 	DueDate  *float64 `gorm:"type:double"`
 	IsDone   bool
@@ -39,7 +38,6 @@ type Todo struct {
 func (Todo) TableName() string { return "todo" }
 
 type Schedule struct {
-	DeviceID              string `gorm:"primaryKey;size:64"`
 	ID                    string `gorm:"primaryKey;size:64"`
 	Title                 string `gorm:"size:255"`
 	Remark                string `gorm:"type:text"`
@@ -56,7 +54,6 @@ type Schedule struct {
 func (Schedule) TableName() string { return "schedule" }
 
 type Anniversary struct {
-	DeviceID           string `gorm:"primaryKey;size:64"`
 	ID                 string `gorm:"primaryKey;size:64"`
 	Name               string `gorm:"size:255"`
 	Date               float64
@@ -71,7 +68,6 @@ type Anniversary struct {
 func (Anniversary) TableName() string { return "anniversary" }
 
 type Password struct {
-	DeviceID      string `gorm:"primaryKey;size:64"`
 	ID            string `gorm:"primaryKey;size:64"`
 	Platform      string `gorm:"size:128"`
 	Account       string `gorm:"size:255"`
@@ -86,7 +82,6 @@ type Password struct {
 func (Password) TableName() string { return "password" }
 
 type OTP struct {
-	DeviceID    string `gorm:"primaryKey;size:64"`
 	ID          string `gorm:"primaryKey;size:64"`
 	Issuer      string `gorm:"size:128"`
 	AccountName string `gorm:"size:255"`
@@ -101,9 +96,8 @@ type OTP struct {
 func (OTP) TableName() string { return "otp" }
 
 type Food struct {
-	DeviceID string `gorm:"primaryKey;size:64"`
-	ID       string `gorm:"primaryKey;size:64"`
-	Name     string `gorm:"size:255"`
+	ID   string `gorm:"primaryKey;size:64"`
+	Name string `gorm:"size:255"`
 	Emoji    string `gorm:"size:16"`
 	// v3：Int → Double（半星评分，0.0..5.0 step 0.5）
 	Rating   float64 `gorm:"type:double"`
@@ -126,10 +120,9 @@ type Food struct {
 func (Food) TableName() string { return "food" }
 
 // CookIngredient v4 新增：菜谱结构化食材子项
-// 主键 (device_id, id)；recipe_id 关联同 device 下的 cook_recipe.id（不走外键约束，
-// 与项目惯例一致：全量覆盖时按 device_id 清空 → 批量插入，外键会增加维护成本）。
+// 主键 id；recipe_id 关联 cook_recipe.id（不走外键约束，与项目惯例一致：
+// 全量覆盖时按表清空 → 批量插入，外键会增加维护成本）。
 type CookIngredient struct {
-	DeviceID string `gorm:"primaryKey;size:64"`
 	ID       string `gorm:"primaryKey;size:64"`
 	RecipeID string `gorm:"size:64;column:recipe_id"`
 	Name     string `gorm:"size:255"`
@@ -141,7 +134,6 @@ func (CookIngredient) TableName() string { return "cook_ingredient" }
 
 // CookCart v4 新增：烹饪车项
 type CookCart struct {
-	DeviceID string `gorm:"primaryKey;size:64"`
 	ID       string `gorm:"primaryKey;size:64"`
 	RecipeID string `gorm:"size:64;column:recipe_id"`
 	Servings int
@@ -151,7 +143,6 @@ type CookCart struct {
 func (CookCart) TableName() string { return "cook_cart" }
 
 type Recipe struct {
-	DeviceID    string `gorm:"primaryKey;size:64"`
 	ID          string `gorm:"primaryKey;size:64"`
 	Name        string `gorm:"size:255"`
 	Emoji       string `gorm:"size:16"`
@@ -171,7 +162,6 @@ type Recipe struct {
 func (Recipe) TableName() string { return "cook_recipe" }
 
 type Note struct {
-	DeviceID  string `gorm:"primaryKey;size:64"`
 	ID        string `gorm:"primaryKey;size:64"`
 	Title     string `gorm:"size:255"`
 	Content   string `gorm:"type:mediumtext"`
@@ -185,7 +175,6 @@ type Note struct {
 func (Note) TableName() string { return "note" }
 
 type AppModule struct {
-	DeviceID       string `gorm:"primaryKey;size:64"`
 	ID             string `gorm:"primaryKey;size:64"`
 	Name           string `gorm:"size:64"`
 	Tag            string `gorm:"size:32"`
@@ -197,9 +186,8 @@ type AppModule struct {
 func (AppModule) TableName() string { return "app_module" }
 
 type AppSetting struct {
-	DeviceID string `gorm:"primaryKey;size:64"`
-	Key      string `gorm:"primaryKey;size:64"`
-	Value    string `gorm:"type:text"`
+	Key   string `gorm:"primaryKey;size:64"`
+	Value string `gorm:"type:text"`
 }
 
 func (AppSetting) TableName() string { return "app_setting" }

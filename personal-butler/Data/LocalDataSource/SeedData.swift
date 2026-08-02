@@ -28,7 +28,7 @@ enum SeedData {
     /// 清理首启灌入的 Demo 数据（isDemo==true 的记录）。
     ///
     /// 仅删除 7 类被标记为 isDemo 的实体；AppModule / AppSetting / 用户自添数据保留。
-    /// PasswordAccount / OTPAccount 的 Keychain 项一并清理。
+    /// 密码 / OTP 明文已直接存在 SwiftData 里，随记录一起删除即可，无需额外清理 Keychain。
     ///
     /// - Returns: 删除的记录条数（不含关联 cascade 的 ingredients / cartItems）。
     @discardableResult
@@ -49,19 +49,17 @@ enum SeedData {
         annis.forEach { context.delete($0) }
         deleted += annis.count
 
-        // Password —— 先收集 Keychain key，delete 后再清理 Keychain
+        // Password
         let pwds = try context.fetch(FetchDescriptor<PasswordAccount>(
             predicate: #Predicate { $0.isDemo == true }
         ))
-        let pwdKeys = pwds.map { $0.passwordKeychainKey }
         pwds.forEach { context.delete($0) }
         deleted += pwds.count
 
-        // OTP —— 同上
+        // OTP
         let otps = try context.fetch(FetchDescriptor<OTPAccount>(
             predicate: #Predicate { $0.isDemo == true }
         ))
-        let otpKeys = otps.map { $0.secretKeychainKey }
         otps.forEach { context.delete($0) }
         deleted += otps.count
 
@@ -87,10 +85,6 @@ enum SeedData {
         deleted += notes.count
 
         try context.save()
-
-        // Keychain 在 save 成功后再清理（保证失败时旧记录仍可用）
-        pwdKeys.forEach { KeychainManager.delete($0) }
-        otpKeys.forEach { KeychainManager.delete($0) }
 
         return deleted
     }
@@ -159,11 +153,9 @@ enum SeedData {
             .init(platform: "飞书办公", account: "lewis@company.com",   pwd: "Feishu@Work123",  cate: .office,  type: "办公"),
         ]
         for s in seeds {
-            let key = "pwd." + UUID().uuidString
-            KeychainManager.save(s.pwd, for: key)
             let acc = PasswordAccount(platform: s.platform, account: s.account,
                                       typeText: s.type, category: s.cate,
-                                      passwordKeychainKey: key, isDemo: true)
+                                      passwordPlain: s.pwd, isDemo: true)
             ctx.insert(acc)
         }
     }
@@ -238,16 +230,14 @@ enum SeedData {
     }
 
     private static func seedOTP(_ ctx: ModelContext) {
-        // 示例 TOTP：Base32 密钥
+        // 示例 TOTP：Base32 密钥（明文直接落 SwiftData，不再走 Keychain）
         let seeds: [(String, String, String)] = [
             ("GitHub", "lewis@github.com", "JBSWY3DPEHPK3PXP"),
             ("Google", "lewis.lau@gmail.com", "GEZDGNBVGY3TQOJQ"),
         ]
         for (issuer, name, secret) in seeds {
-            let key = "otp." + UUID().uuidString
-            KeychainManager.save(secret, for: key)
             let acc = OTPAccount(issuer: issuer, accountName: name,
-                                 secretKeychainKey: key, isDemo: true)
+                                 secretPlain: secret, isDemo: true)
             ctx.insert(acc)
         }
     }

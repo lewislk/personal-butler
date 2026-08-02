@@ -7,10 +7,14 @@ import (
 	"github.com/lewis/personal-butler/internal/dto"
 )
 
-// 与 iOS 客户端契约（CLAUDE.md §8）：
+// 与 iOS 客户端契约（AGENTS.md §8）：
 // 1001 头缺失 / 1002 密钥错 / 1003 JSON 解析失败
 // 2001 存储失败 / 2002 无备份 / 2003 同一设备的写请求正在进行中
 // 5000 内部异常
+//
+// v6 起：移除 X-Device-ID 校验（单用户单设备场景，多设备隔离不再需要）。
+// 错误码 1001 仍保留语义为 "missing X-Sync-Token"，但实际只在 token 缺失
+// 且服务端配置了 token 时才会触发；token 未配置时跳过校验，便于本地开发。
 const (
 	CodeOK             = 0
 	CodeHeaderMissing  = 1001
@@ -23,25 +27,15 @@ const (
 )
 
 const (
-	HeaderDeviceID  = "X-Device-ID"
 	HeaderSyncToken = "X-Sync-Token"
-	CtxDeviceID     = "device_id"
 )
 
-// AuthHeader 校验 X-Device-ID 与 X-Sync-Token：
-// - device 头缺失 → 1001
-// - token 不匹配 → 1002（若服务端 token 配置为空，则跳过 token 校验）
+// AuthHeader 校验 X-Sync-Token（v6 起不再校验 X-Device-ID）。
+//   - 若服务端 token 配置为空，跳过 token 校验（开发兜底，会打 warn 日志）
+//   - 若服务端 token 非空且请求头不匹配，返回 1002
 func AuthHeader(expectedToken string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		deviceID := c.GetHeader(HeaderDeviceID)
 		token := c.GetHeader(HeaderSyncToken)
-		if deviceID == "" {
-			c.AbortWithStatusJSON(http.StatusOK, dto.APIResponse{
-				Code: CodeHeaderMissing,
-				Msg:  "missing X-Device-ID",
-			})
-			return
-		}
 		if expectedToken != "" && token != expectedToken {
 			c.AbortWithStatusJSON(http.StatusOK, dto.APIResponse{
 				Code: CodeTokenInvalid,
@@ -49,17 +43,6 @@ func AuthHeader(expectedToken string) gin.HandlerFunc {
 			})
 			return
 		}
-		c.Set(CtxDeviceID, deviceID)
 		c.Next()
 	}
-}
-
-// DeviceID 从 gin.Context 取当前请求的 device 标识。
-func DeviceID(c *gin.Context) string {
-	if v, ok := c.Get(CtxDeviceID); ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
 }

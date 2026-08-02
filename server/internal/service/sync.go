@@ -11,102 +11,96 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrNoBackup 该 device 尚未上传过任何数据。
-var ErrNoBackup = errors.New("no backup for device")
+// ErrNoBackup 服务端尚未上传过任何数据（sync_meta 仍为初始占位行）。
+var ErrNoBackup = errors.New("no backup yet")
 
-// ErrSyncInProgress 同一 deviceID 已经有一次写请求（upload/clear）在跑，
+// ErrSyncInProgress 已经有一次写请求（upload/clear）在跑，
 // 拒绝并发进入，避免"DELETE + INSERT"事务互相踩踏导致数据残缺。
 // 客户端应当把按钮 disabled 并等上一次结束后再重试。
-var ErrSyncInProgress = errors.New("sync in progress for device")
+var ErrSyncInProgress = errors.New("sync in progress")
 
 type SyncService struct {
 	db *gorm.DB
-	// deviceLocks 每个 deviceID 一把互斥锁；进程内单飞。
-	// value: *sync.Mutex（LoadOrStore 保证只创建一份）。
-	// MVP 单进程部署下这已足够；将来多副本再换 Redis SETNX / DB 咨询锁。
-	deviceLocks sync.Map
+	// writeMu 全局写互斥锁（v6 起单用户单设备，不再按 deviceID 分桶）。
+	// 进程内单飞；MVP 单进程部署下这已足够，将来多副本再换 Redis SETNX / DB 咨询锁。
+	writeMu sync.Mutex
 }
 
 func NewSyncService(db *gorm.DB) *SyncService { return &SyncService{db: db} }
 
-// lockFor 拿到 deviceID 对应的 mutex（不存在则原子创建）。
-func (s *SyncService) lockFor(deviceID string) *sync.Mutex {
-	if v, ok := s.deviceLocks.Load(deviceID); ok {
-		return v.(*sync.Mutex)
-	}
-	v, _ := s.deviceLocks.LoadOrStore(deviceID, &sync.Mutex{})
-	return v.(*sync.Mutex)
-}
-
-// Upload 全量覆盖：先按 deviceID 清空该设备的所有业务表，再批量插入新的 payload。
+// Upload 全量覆盖：先清空所有业务表，再批量插入新的 payload。
 // 语义与客户端「MVP 全量覆盖」一致；整个过程在一个事务内。
 //
-// 并发保护：同一 deviceID 用 TryLock 单飞。抢不到就返回 ErrSyncInProgress，
+// 并发保护：用 TryLock 单飞。抢不到就返回 ErrSyncInProgress，
 // 上游转 code=2003 让客户端在 UI 上提示"上一次同步还在进行"。
-func (s *SyncService) Upload(deviceID string, p *dto.SyncPayload) error {
-	mu := s.lockFor(deviceID)
-	if !mu.TryLock() {
+func (s *SyncService) Upload(p *dto.SyncPayload) error {
+	if !s.writeMu.TryLock() {
 		return ErrSyncInProgress
 	}
-	defer mu.Unlock()
+	defer s.writeMu.Unlock()
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := clearDevice(tx, deviceID); err != nil {
+		if err := clearAll(tx); err != nil {
 			return err
 		}
-		if err := insertPayload(tx, deviceID, p); err != nil {
+		if err := insertPayload(tx, p); err != nil {
 			return err
 		}
+		// sync_meta：单行表（id=1）upsert
 		meta := model.SyncMetaRow{
-			DeviceID:      deviceID,
+			ID:            1,
 			SyncTimestamp: p.SyncMeta.SyncTimestamp,
 			AppVersion:    p.SyncMeta.AppVersion,
 			DataVersion:   p.SyncMeta.DataVersion,
 			UpdatedAt:     time.Now(),
 		}
-		// Save == UPDATE if PK exists else INSERT
 		return tx.Save(&meta).Error
 	})
 }
 
-// Download 组回一个完整 SyncPayload。若 sync_meta 里无该 device 记录，返回 ErrNoBackup。
-func (s *SyncService) Download(deviceID string) (*dto.SyncPayload, error) {
+// Download 组回一个完整 SyncPayload。
+// 若 sync_meta 仍是初始占位行（sync_timestamp=0），视为未上传过，返回 ErrNoBackup。
+func (s *SyncService) Download() (*dto.SyncPayload, error) {
 	var meta model.SyncMetaRow
-	if err := s.db.First(&meta, "device_id = ?", deviceID).Error; err != nil {
+	if err := s.db.First(&meta, "id = ?", 1).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNoBackup
 		}
 		return nil, err
 	}
+	if meta.SyncTimestamp == 0 {
+		return nil, ErrNoBackup
+	}
 	payload := &dto.SyncPayload{
 		SyncMeta: dto.SyncMeta{
-			DeviceID:      meta.DeviceID,
 			SyncTimestamp: meta.SyncTimestamp,
 			AppVersion:    meta.AppVersion,
 			DataVersion:   meta.DataVersion,
 		},
 	}
-	if err := loadPayload(s.db, deviceID, &payload.Data); err != nil {
+	if err := loadPayload(s.db, &payload.Data); err != nil {
 		return nil, err
 	}
 	return payload, nil
 }
 
-// Info 返回摘要：sync_meta 行 + 该 device 的实体总条数。
-func (s *SyncService) Info(deviceID string) (*dto.SyncInfo, error) {
+// Info 返回摘要：sync_meta 行 + 全部业务表实体总条数。
+func (s *SyncService) Info() (*dto.SyncInfo, error) {
 	var meta model.SyncMetaRow
-	if err := s.db.First(&meta, "device_id = ?", deviceID).Error; err != nil {
+	if err := s.db.First(&meta, "id = ?", 1).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNoBackup
 		}
 		return nil, err
 	}
-	total, err := countAll(s.db, deviceID)
+	if meta.SyncTimestamp == 0 {
+		return nil, ErrNoBackup
+	}
+	total, err := countAll(s.db)
 	if err != nil {
 		return nil, err
 	}
 	return &dto.SyncInfo{
-		DeviceID:      meta.DeviceID,
 		SyncTimestamp: meta.SyncTimestamp,
 		AppVersion:    meta.AppVersion,
 		DataVersion:   meta.DataVersion,
@@ -114,48 +108,33 @@ func (s *SyncService) Info(deviceID string) (*dto.SyncInfo, error) {
 	}, nil
 }
 
-// Clear 删除该 device 的全部业务数据 + sync_meta 行。
-// 同 Upload：走同一把 device 锁，避免和上传并发相互踩踏。
-func (s *SyncService) Clear(deviceID string) error {
-	mu := s.lockFor(deviceID)
-	if !mu.TryLock() {
+// Clear 删除全部业务数据 + 把 sync_meta 重置为占位行。
+// 同 Upload：走同一把全局锁，避免和上传并发相互踩踏。
+func (s *SyncService) Clear() error {
+	if !s.writeMu.TryLock() {
 		return ErrSyncInProgress
 	}
-	defer mu.Unlock()
+	defer s.writeMu.Unlock()
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := clearDevice(tx, deviceID); err != nil {
+		if err := clearAll(tx); err != nil {
 			return err
 		}
-		return tx.Where("device_id = ?", deviceID).Delete(&model.SyncMetaRow{}).Error
+		// 把 sync_meta 重置为占位行（sync_timestamp=0 → Download 视为未备份）
+		return tx.Model(&model.SyncMetaRow{}).Where("id = ?", 1).
+			Updates(map[string]any{
+				"sync_timestamp": 0,
+				"app_version":    "",
+				"data_version":   6,
+			}).Error
 	})
-}
-
-// ListDevices 返回 sync_meta 表中所有设备的元信息，按最近更新时间倒序。
-// 用于 Web 配置页让用户从已上传过数据的 device 列表中选择当前操作的设备。
-func (s *SyncService) ListDevices() ([]dto.DeviceItem, error) {
-	var rows []model.SyncMetaRow
-	if err := s.db.Order("updated_at desc").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	out := make([]dto.DeviceItem, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, dto.DeviceItem{
-			DeviceID:      r.DeviceID,
-			SyncTimestamp: r.SyncTimestamp,
-			AppVersion:    r.AppVersion,
-			DataVersion:   r.DataVersion,
-			UpdatedAt:     r.UpdatedAt.Format(time.RFC3339),
-		})
-	}
-	return out, nil
 }
 
 // ---------- 内部辅助 ----------
 
-// deviceScopedTables 所有 (device_id, ...) 主键的业务表模型集合。
+// allTables 所有业务表模型集合（v6 起不再按 device_id 隔离，全表清空）。
 // 新增业务实体时在这里 + insertPayload + loadPayload + countAll 一起添加即可。
-func deviceScopedTables() []any {
+func allTables() []any {
 	return []any{
 		&model.Todo{}, &model.Schedule{}, &model.Anniversary{},
 		&model.Password{}, &model.OTP{},
@@ -165,9 +144,10 @@ func deviceScopedTables() []any {
 	}
 }
 
-func clearDevice(tx *gorm.DB, deviceID string) error {
-	for _, m := range deviceScopedTables() {
-		if err := tx.Where("device_id = ?", deviceID).Delete(m).Error; err != nil {
+func clearAll(tx *gorm.DB) error {
+	for _, m := range allTables() {
+		// 单条 DELETE FROM 不带 WHERE；GORM 要求必须有 Where 或 AllowGlobalUpdate
+		if err := tx.Where("1 = 1").Delete(m).Error; err != nil {
 			return err
 		}
 	}
@@ -210,15 +190,21 @@ func parseStringSlice(s string) []string {
 	return out
 }
 
-func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
+// insertPayload 把 SyncPayload.Data 各 list 批量写入数据库。
+// 调用方需先 clearAll 清空旧记录，保证全量覆盖语义。
+//
+// 所有 CreateInBatches 都带 Select("*")：GORM 默认会跳过零值字段，导致
+// password_plain / secret_plain / type_text 等空串字段段落入 NULL，
+// 客户端 download 回来后明文丢失。Select("*") 强制写入所有字段，
+// 即使是空串也按 DEFAULT '' / NULL 语义落库。
+func insertPayload(tx *gorm.DB, p *dto.SyncPayload) error {
 	d := &p.Data
 
 	if len(d.TodoList) > 0 {
 		rows := make([]model.Todo, 0, len(d.TodoList))
 		for _, x := range d.TodoList {
 			row := model.Todo{
-				DeviceID: deviceID, ID: x.ID,
-				Name: x.Name, Source: x.Source, DueDate: x.DueDate,
+				ID: x.ID, Name: x.Name, Source: x.Source, DueDate: x.DueDate,
 				IsDone: x.IsDone, CreatedAt: x.CreatedAt,
 			}
 			// v4 Optional 字段：指针拷贝
@@ -234,7 +220,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 			}
 			rows = append(rows, row)
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -243,15 +229,14 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		rows := make([]model.Schedule, 0, len(d.ScheduleList))
 		for _, x := range d.ScheduleList {
 			rows = append(rows, model.Schedule{
-				DeviceID: deviceID, ID: x.ID,
-				Title: x.Title, Remark: x.Remark,
+				ID: x.ID, Title: x.Title, Remark: x.Remark,
 				StartDate: x.StartDate, EndDate: x.EndDate,
 				IsAllDay: x.IsAllDay, ReminderMinutesBefore: x.ReminderMinutesBefore,
 				ColorTag: x.ColorTag, IsCompleted: x.IsCompleted,
 				IsDemo:   derefBool(x.IsDemo),
 			})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -260,13 +245,12 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		rows := make([]model.Anniversary, 0, len(d.AnniversaryList))
 		for _, x := range d.AnniversaryList {
 			rows = append(rows, model.Anniversary{
-				DeviceID: deviceID, ID: x.ID,
-				Name: x.Name, Date: x.Date, IsLunar: x.IsLunar, Type: x.Type,
+				ID: x.ID, Name: x.Name, Date: x.Date, IsLunar: x.IsLunar, Type: x.Type,
 				ReminderDaysBefore: x.ReminderDaysBefore, Emoji: x.Emoji,
 				IsDemo: derefBool(x.IsDemo),
 			})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -275,14 +259,13 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		rows := make([]model.Password, 0, len(d.PasswordList))
 		for _, x := range d.PasswordList {
 			rows = append(rows, model.Password{
-				DeviceID: deviceID, ID: x.ID,
-				Platform: x.Platform, Account: x.Account,
+				ID: x.ID, Platform: x.Platform, Account: x.Account,
 				TypeText: x.TypeText, Category: x.Category,
 				PasswordPlain: x.PasswordPlain, UpdatedAt: x.UpdatedAt,
 				IsDemo: derefBool(x.IsDemo),
 			})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -291,14 +274,13 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		rows := make([]model.OTP, 0, len(d.OTPList))
 		for _, x := range d.OTPList {
 			rows = append(rows, model.OTP{
-				DeviceID: deviceID, ID: x.ID,
-				Issuer: x.Issuer, AccountName: x.AccountName,
+				ID: x.ID, Issuer: x.Issuer, AccountName: x.AccountName,
 				SecretPlain: x.SecretPlain,
 				Period:      x.Period, Digits: x.Digits, OrderIdx: x.Order,
 				IsDemo: derefBool(x.IsDemo),
 			})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -308,8 +290,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		for _, x := range d.FoodRecordList {
 			tags, _ := json.Marshal(x.Tags)
 			rows = append(rows, model.Food{
-				DeviceID: deviceID, ID: x.ID,
-				Name: x.Name, Emoji: x.Emoji, Rating: x.Rating,
+				ID: x.ID, Name: x.Name, Emoji: x.Emoji, Rating: x.Rating,
 				Tags: string(tags), Remark: x.Remark,
 				Date: x.Date, Category: x.Category,
 				// v2 位置 / v3 图片
@@ -319,7 +300,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				IsDemo:          derefBool(x.IsDemo),
 			})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -329,8 +310,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		rows := make([]model.Recipe, 0, len(d.CookRecipeList))
 		for _, x := range d.CookRecipeList {
 			rows = append(rows, model.Recipe{
-				DeviceID: deviceID, ID: x.ID,
-				Name: x.Name, Emoji: x.Emoji, Difficulty: x.Difficulty,
+				ID: x.ID, Name: x.Name, Emoji: x.Emoji, Difficulty: x.Difficulty,
 				Minutes: x.Minutes, Category: x.Category,
 				IngredientsLegacyRaw: x.IngredientsLegacyRaw,
 				Steps: x.Steps, Tips: x.Tips,
@@ -338,7 +318,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 				IsDemo:          derefBool(x.IsDemo),
 			})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 
@@ -347,14 +327,13 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		for _, x := range d.CookRecipeList {
 			for _, ing := range x.Ingredients {
 				ingRows = append(ingRows, model.CookIngredient{
-					DeviceID: deviceID, ID: ing.ID,
-					RecipeID: x.ID, Name: ing.Name,
+					ID: ing.ID, RecipeID: x.ID, Name: ing.Name,
 					Amount: ing.Amount, OrderIdx: ing.Order,
 				})
 			}
 		}
 		if len(ingRows) > 0 {
-			if err := tx.CreateInBatches(ingRows, 200).Error; err != nil {
+			if err := tx.Select("*").CreateInBatches(ingRows, 200).Error; err != nil {
 				return err
 			}
 		}
@@ -365,11 +344,10 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		rows := make([]model.CookCart, 0, len(d.CartList))
 		for _, x := range d.CartList {
 			rows = append(rows, model.CookCart{
-				DeviceID: deviceID, ID: x.ID,
-				RecipeID: x.RecipeID, Servings: x.Servings, AddedAt: x.AddedAt,
+				ID: x.ID, RecipeID: x.RecipeID, Servings: x.Servings, AddedAt: x.AddedAt,
 			})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -378,13 +356,12 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		rows := make([]model.Note, 0, len(d.NoteList))
 		for _, x := range d.NoteList {
 			rows = append(rows, model.Note{
-				DeviceID: deviceID, ID: x.ID,
-				Title: x.Title, Content: x.Content, Tag: x.Tag,
+				ID: x.ID, Title: x.Title, Content: x.Content, Tag: x.Tag,
 				CreatedAt: x.CreatedAt, UpdatedAt: x.UpdatedAt,
 				IsDemo: derefBool(x.IsDemo),
 			})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -393,12 +370,11 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 		rows := make([]model.AppModule, 0, len(d.AppModuleList))
 		for _, x := range d.AppModuleList {
 			rows = append(rows, model.AppModule{
-				DeviceID: deviceID, ID: x.ID,
-				Name: x.Name, Tag: x.Tag, IconSystemName: x.IconSystemName,
+				ID: x.ID, Name: x.Name, Tag: x.Tag, IconSystemName: x.IconSystemName,
 				OrderIdx: x.Order, ComingSoon: x.ComingSoon,
 			})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -406,9 +382,9 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 	if len(d.Setting) > 0 {
 		rows := make([]model.AppSetting, 0, len(d.Setting))
 		for k, v := range d.Setting {
-			rows = append(rows, model.AppSetting{DeviceID: deviceID, Key: k, Value: v})
+			rows = append(rows, model.AppSetting{Key: k, Value: v})
 		}
-		if err := tx.CreateInBatches(rows, 200).Error; err != nil {
+		if err := tx.Select("*").CreateInBatches(rows, 200).Error; err != nil {
 			return err
 		}
 	}
@@ -416,7 +392,7 @@ func insertPayload(tx *gorm.DB, deviceID string, p *dto.SyncPayload) error {
 	return nil
 }
 
-func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
+func loadPayload(db *gorm.DB, out *dto.SyncData) error {
 	// 初始化空切片而不是 nil，让 JSON 序列化出 `[]` 而不是 `null`（对齐客户端 Codable 期望）
 	out.TodoList = []dto.SyncTodoDTO{}
 	out.ScheduleList = []dto.SyncScheduleDTO{}
@@ -431,7 +407,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	out.Setting = map[string]string{}
 
 	var todos []model.Todo
-	if err := db.Where("device_id = ?", deviceID).Find(&todos).Error; err != nil {
+	if err := db.Find(&todos).Error; err != nil {
 		return err
 	}
 	for _, x := range todos {
@@ -451,7 +427,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	}
 
 	var schedules []model.Schedule
-	if err := db.Where("device_id = ?", deviceID).Find(&schedules).Error; err != nil {
+	if err := db.Find(&schedules).Error; err != nil {
 		return err
 	}
 	for _, x := range schedules {
@@ -465,7 +441,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	}
 
 	var annis []model.Anniversary
-	if err := db.Where("device_id = ?", deviceID).Find(&annis).Error; err != nil {
+	if err := db.Find(&annis).Error; err != nil {
 		return err
 	}
 	for _, x := range annis {
@@ -477,7 +453,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	}
 
 	var pws []model.Password
-	if err := db.Where("device_id = ?", deviceID).Find(&pws).Error; err != nil {
+	if err := db.Find(&pws).Error; err != nil {
 		return err
 	}
 	for _, x := range pws {
@@ -490,7 +466,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	}
 
 	var otps []model.OTP
-	if err := db.Where("device_id = ?", deviceID).Order("order_idx asc").Find(&otps).Error; err != nil {
+	if err := db.Order("order_idx asc").Find(&otps).Error; err != nil {
 		return err
 	}
 	for _, x := range otps {
@@ -502,7 +478,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	}
 
 	var foods []model.Food
-	if err := db.Where("device_id = ?", deviceID).Find(&foods).Error; err != nil {
+	if err := db.Find(&foods).Error; err != nil {
 		return err
 	}
 	for _, x := range foods {
@@ -524,13 +500,13 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 		})
 	}
 
-	// cook_recipe + cook_ingredient：先查 recipe，再查该 device 全部 ingredient 按 recipe_id 分组
+	// cook_recipe + cook_ingredient：先查 recipe，再查全部 ingredient 按 recipe_id 分组
 	var recipes []model.Recipe
-	if err := db.Where("device_id = ?", deviceID).Find(&recipes).Error; err != nil {
+	if err := db.Find(&recipes).Error; err != nil {
 		return err
 	}
 	var allIngs []model.CookIngredient
-	if err := db.Where("device_id = ?", deviceID).Order("order_idx asc").Find(&allIngs).Error; err != nil {
+	if err := db.Order("order_idx asc").Find(&allIngs).Error; err != nil {
 		return err
 	}
 	ingByRecipe := make(map[string][]dto.SyncIngredientDTO, len(recipes))
@@ -557,7 +533,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 
 	// cook_cart：v4 新增
 	var carts []model.CookCart
-	if err := db.Where("device_id = ?", deviceID).Order("added_at asc").Find(&carts).Error; err != nil {
+	if err := db.Order("added_at asc").Find(&carts).Error; err != nil {
 		return err
 	}
 	for _, x := range carts {
@@ -567,7 +543,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	}
 
 	var notes []model.Note
-	if err := db.Where("device_id = ?", deviceID).Find(&notes).Error; err != nil {
+	if err := db.Find(&notes).Error; err != nil {
 		return err
 	}
 	for _, x := range notes {
@@ -579,7 +555,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	}
 
 	var mods []model.AppModule
-	if err := db.Where("device_id = ?", deviceID).Order("order_idx asc").Find(&mods).Error; err != nil {
+	if err := db.Order("order_idx asc").Find(&mods).Error; err != nil {
 		return err
 	}
 	for _, x := range mods {
@@ -590,7 +566,7 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	}
 
 	var settings []model.AppSetting
-	if err := db.Where("device_id = ?", deviceID).Find(&settings).Error; err != nil {
+	if err := db.Find(&settings).Error; err != nil {
 		return err
 	}
 	for _, x := range settings {
@@ -599,12 +575,12 @@ func loadPayload(db *gorm.DB, deviceID string, out *dto.SyncData) error {
 	return nil
 }
 
-func countAll(db *gorm.DB, deviceID string) (int64, error) {
+func countAll(db *gorm.DB) (int64, error) {
 	var total int64
-	for _, m := range deviceScopedTables() {
-		// AppSetting 复合主键是 (device_id, key)，也算实体数
+	for _, m := range allTables() {
+		// AppSetting 主键是 key，也算实体数
 		var c int64
-		if err := db.Model(m).Where("device_id = ?", deviceID).Count(&c).Error; err != nil {
+		if err := db.Model(m).Count(&c).Error; err != nil {
 			return 0, err
 		}
 		total += c

@@ -121,7 +121,7 @@
   → LocalAuthService.authenticate
   → BackupSyncUseCase.upload()
   → buildPayload() → POST http://{host}:8090/sync/upload
-  → 头部：X-Device-ID / X-Sync-Token
+  → 头部：X-Sync-Token（v6 起单用户单设备，移除 X-Device-ID）
   → 成功 → AppEnvironment.markSynced() 记录 lastSyncTime
 
 [局域网下载 / 恢复]

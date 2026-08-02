@@ -28,20 +28,10 @@ export class ApiError extends Error {
 }
 
 // /sync/info 返回结构
+// v6 起移除 deviceId 字段（单用户单设备场景）
 export interface SyncInfo {
-  deviceId: string
   syncTimestamp: number
   appVersion: string
   dataVersion: number
   totalCount: number
-}
-
-// /api/devices 列表项
-export interface DeviceItem {
-  deviceId: string
-  syncTimestamp: number
-  appVersion: string
-  dataVersion: number
-  // RFC3339 格式
-  updatedAt: string
 }

@@ -17,7 +17,7 @@
             <el-tag v-else type="info" size="small" round>尚未同步</el-tag>
           </div>
           <div v-if="!cfg.isConfigured" class="card-body">
-            <el-empty :image-size="60" description="请先配置 Device ID">
+            <el-empty :image-size="60" description="请先配置 Sync Token">
               <el-button type="primary" size="small" @click="goSettings">立即配置</el-button>
             </el-empty>
           </div>
@@ -84,7 +84,7 @@
       >
         <ol class="tip-steps">
           <li>iOS 端先做一次<strong>上传</strong>，把本地状态推到服务端</li>
-          <li>浏览器打开 /web，配置 Device ID + Token</li>
+          <li>浏览器打开 /web，配置 Sync Token</li>
           <li>在 Web 端录入 / 编辑数据，保存到 DB</li>
           <li>iOS 端做<strong>下载</strong> → 本地数据被服务端数据全量替换</li>
         </ol>
@@ -96,7 +96,7 @@
         title="⚠️ 注意 upload 会覆盖 Web 录入"
         style="margin-top: 12px"
       >
-        <p>iOS 端 upload 是全量覆盖语义（DELETE WHERE device_id + INSERT）。如果 iOS 在 Web 录入后再 upload，会<strong>清空</strong> Web 录入的数据。</p>
+        <p>iOS 端 upload 是全量覆盖语义（先 DELETE 全表再 INSERT）。如果 iOS 在 Web 录入后再 upload，会<strong>清空</strong> Web 录入的数据。</p>
         <p>请严格遵循「先 iOS upload → 再 Web 编辑 → 再 iOS download」的顺序。</p>
       </el-alert>
     </el-card>

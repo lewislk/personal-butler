@@ -21,7 +21,7 @@ var indexHTML []byte
 //   - /web 直接返回 index.html；其它静态资源（JS/CSS）走 /web/static/*。
 //   - 前端用 hash 路由（/web#/recipes），无需 Go 端 fallback。
 //   - 不复用 /sync/* 路由的 AuthHeader middleware —— 页面本身是 HTML，鉴权信息由前端
-//     在 localStorage 维护，每次调 /api/* 时通过 fetch header 带上 X-Device-ID + X-Sync-Token。
+//     在 localStorage 维护，每次调 /api/* 时通过 fetch header 带上 X-Sync-Token。
 //
 // 注意：files/dist/ 是 Vite 构建产物，不入 git。本地开发需先 `cd internal/web/files && npm run build`。
 func Register(r *gin.Engine) {

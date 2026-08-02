@@ -6,7 +6,6 @@
 import Foundation
 
 struct SyncMeta: Codable {
-    var deviceId: String
     var syncTimestamp: Int64
     var appVersion: String
     var dataVersion: Int

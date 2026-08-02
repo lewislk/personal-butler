@@ -52,7 +52,7 @@
         <div class="header-right">
           <el-tag v-if="cfg.isConfigured" type="success" effect="light" round size="small">
             <el-icon style="vertical-align: middle; margin-right: 4px"><CircleCheck /></el-icon>
-            {{ cfg.deviceId.slice(0, 8) }}…
+            已配置
           </el-tag>
           <el-tag v-else type="warning" effect="light" round size="small">未配置</el-tag>
           <el-tooltip content="同步配置" placement="bottom">
@@ -92,11 +92,11 @@ const collapsed = ref(false)
 const cfg = useConfigStore()
 const route = useRoute()
 
-// 进入任意页面时，若 deviceId 为空 → 自动唤起配置抽屉
+// 进入任意页面时，若 syncToken 为空 → 自动唤起配置抽屉
 onMounted(() => {
   if (!cfg.isConfigured) {
     drawerVisible.value = true
-    ElMessage.warning('请先配置 Device ID')
+    ElMessage.warning('请先配置 Sync Token')
   }
 })
 

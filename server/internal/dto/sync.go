@@ -3,8 +3,9 @@ package dto
 // 与 iOS 端 Data/Mapper/SyncPayload.swift 完全对齐。
 // JSON tag 与 Swift Codable 默认策略（属性名原样）保持一致。
 
+// SyncMeta 同步包元信息。v6 起移除 deviceId 字段（单用户单设备，
+// 不再需要设备隔离）。dataVersion 当前为 6。
 type SyncMeta struct {
-	DeviceID      string `json:"deviceId"`
 	SyncTimestamp int64  `json:"syncTimestamp"`
 	AppVersion    string `json:"appVersion"`
 	DataVersion   int    `json:"dataVersion"`
@@ -170,24 +171,13 @@ type SyncPayload struct {
 }
 
 // SyncInfo GET /sync/info 返回体。
+// v6 起移除 deviceId 字段。
 type SyncInfo struct {
-	DeviceID      string `json:"deviceId"`
 	SyncTimestamp int64  `json:"syncTimestamp"`
 	AppVersion    string `json:"appVersion"`
 	DataVersion   int    `json:"dataVersion"`
-	// TotalCount 该 device 备份的实体条数总和（不含 setting）。
+	// TotalCount 备份的实体条数总和（不含 setting）。
 	TotalCount int64 `json:"totalCount"`
-}
-
-// DeviceItem GET /api/devices 列表项。
-// 用于 Web 配置页让用户从已上传过数据的 device 列表中选择当前操作的设备。
-type DeviceItem struct {
-	DeviceID      string `json:"deviceId"`
-	SyncTimestamp int64  `json:"syncTimestamp"`
-	AppVersion    string `json:"appVersion"`
-	DataVersion   int    `json:"dataVersion"`
-	// UpdatedAt 最近一次上传时间（RFC3339 格式，前端直接展示）
-	UpdatedAt string `json:"updatedAt"`
 }
 
 // APIResponse 统一返回结构。

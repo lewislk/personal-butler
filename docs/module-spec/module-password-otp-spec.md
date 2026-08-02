@@ -1,6 +1,6 @@
 # PersonalButler · 密码 & 2FA · 模块级 SPEC
 
-> 模块职责：本地私密密码库 + 内置 2FA（TOTP）验证器。**所有敏感数据（密码明文 / TOTP 密钥）仅存 Keychain**，SwiftData 只存元数据 + Keychain key。进入模块与查看明文均强制生物识别。
+> 模块职责：本地私密密码库 + 内置 2FA（TOTP）验证器。**敏感数据（密码明文 / TOTP 密钥）直接落 SwiftData**（`passwordPlain` / `secretPlain` 字段），不再走 Keychain。进入模块与查看明文均强制生物识别。
 
 ## 1. 范围与边界
 
@@ -10,7 +10,7 @@
 - 分类筛选（社交/办公/金融/自定义）
 - 明文查看与复制（点眼睛切换 + 复制按钮）
 - 编辑密码时可切换明文查看，账号 / 密码支持一键清空
-- 2FA 账号 CRUD（新增**仅支持扫码 `otpauth://totp/...` 二维码**；编辑仅允许改 issuer / accountName；删除同步清理 Keychain 密钥）
+- 2FA 账号 CRUD（新增**仅支持扫码 `otpauth://totp/...` 二维码**；编辑仅允许改 issuer / accountName；删除随 SwiftData 记录一起清理明文）
 - TOTP 每秒刷新(RFC 6238，HMAC-SHA1，6 位数字，30s 周期)
 - 点击复制按钮把当前 6 位验证码写入剪贴板 + 底部黑色胶囊 toast 反馈
 - 进入页面 / 恢复到前台时的**生物识别校验**
@@ -18,11 +18,11 @@
 
 不覆盖:
 
-- TOTP 密钥的服务端提供 / 云端同步（仅本机 Keychain）
+- TOTP 密钥的服务端提供（仅本机 + 用户自建局域网同步）
 - 密码的自动填充（AutoFill Credential Provider Extension，未启用）
 - Google Authenticator 迁移 URL（`otpauth-migration://offline?data=...`）解析
 - 密码强度评估、生成随机密码
-- 2FA secret 编辑（一次性写入 Keychain，之后不可改；如需替换需删除后重扫）
+- 2FA secret 编辑（一次性写入 SwiftData，之后不可改；如需替换需删除后重扫）
 
 ## 2. 核心概念
 
@@ -34,10 +34,12 @@
 | `account` | String | 账号（可含掩码） |
 | `typeText` | String | 展示辅文（"社交 · 常用"） |
 | `category` | Enum | 分类，决定卡片渐变色 |
-| `passwordKeychainKey` | String | Keychain 中密码明文的 key（`pwd.<uuid>`） |
+| `passwordPlain` | String | **密码明文**（v5 起直接落 SwiftData，App 不连外网） |
+| `passwordKeychainKey` | String | 历史 Keychain key，已废弃保留兼容；新数据写空串 |
 | `updatedAt` | Date | 排序依据（倒序） |
+| `isDemo` | Bool | 首启灌入的示例数据标记，清理 Demo 时按此过滤 |
 
-明文不在此存储，通过 `KeychainManager.load(passwordKeychainKey)` 取出。
+明文直接从 `account.passwordPlain` 读出，无需走 Keychain。
 
 ### OTPAccount
 
@@ -45,12 +47,23 @@
 |------|------|---------|
 | `issuer` | String | 服务商（GitHub / Google） |
 | `accountName` | String | 账号名（邮箱等） |
-| `secretKeychainKey` | String | Keychain 中 Base32 密钥的 key（`otp.<uuid>`） |
+| `secretPlain` | String | **TOTP Base32 密钥明文**（v5 起直接落 SwiftData） |
+| `secretKeychainKey` | String | 历史 Keychain key，已废弃保留兼容；新数据写空串 |
 | `period` | Int | 周期秒（默认 30） |
 | `digits` | Int | 位数（默认 6） |
 | `order` | Int | 列表排序（MVP 未提供拖拽排序 UI） |
+| `isDemo` | Bool | 首启灌入的示例数据标记，清理 Demo 时按此过滤 |
 
-Base32 密钥不在此存储。
+Base32 密钥直接从 `account.secretPlain` 读出，无需走 Keychain。
+
+### Keychain 迁移（一次性，冷启触发）
+
+`PersonalButlerApp.migrateKeychainToSwiftData` 在 bootstrap 里调用一次：
+
+- 遍历本地 `PasswordAccount` / `OTPAccount`
+- 若 `passwordPlain` / `secretPlain` 为空，且 `passwordKeychainKey` / `secretKeychainKey` 非空 → 从 Keychain 读明文回填到 SwiftData 字段
+- 迁移成功的 key 立即从 Keychain 删除，避免残留孤儿密钥
+- 幂等：`passwordPlain` 已有值则跳过
 
 ### 生物识别门禁
 
@@ -84,7 +97,7 @@ Base32 密钥不在此存储。
 | 扫码组件 | `Presentation/Components/QRCodeScannerView.swift` | 纯 `AVFoundation`，无三方；命中一次自动防抖 |
 | otpauth 解析 | `Core/Utils/OTPAuthURL.swift` · `OTPAuthURL.parse` | 兼容 label 内 `Issuer:account` + query `issuer=` |
 | 复制反馈 | `PasswordView.swift` · `copyToPasteboard(_:label:)` | 集中入口：`UIPasteboard` + 轻触反馈 + 底部黑色胶囊 toast |
-| Keychain | `Core/Utils/KeychainManager.swift` | `save / load / delete` |
+| Keychain（仅迁移用） | `Core/Utils/KeychainManager.swift` | `save / load / delete`；v5 起业务路径不再调用，仅 `PersonalButlerApp.migrateKeychainToSwiftData` 用于回填老用户数据 |
 | TOTP 生成 | `Core/Utils/OTPGenerator.swift` | HMAC-SHA1 + Base32 解码 |
 | 生物识别 | `Core/Auth/LocalAuthService.swift` | `deviceOwnerAuthentication` |
 
@@ -131,12 +144,12 @@ Base32 密钥不在此存储。
 **业务规则：**
 
 - 默认展示掩码 `••••••••`
-- 点击 👁 图标 → toggle `reveal`；显示时用 `KeychainManager.load(passwordKeychainKey)` 取明文
+- 点击 👁 图标 → toggle `reveal`；显示时直接读 `account.passwordPlain`
 - 点击 📋 图标 → 复制明文到 `UIPasteboard.general`（无需先显示）；触发轻触反馈 + 底部黑色胶囊 toast "密码已复制"
 - 账号列的 📋 → toast "账号已复制"
 - 显示明文时字号 13pt（monospaced）；掩码时 15pt + `kerning(3)` 拉开点距
 - 点击卡片主体（非 👁 / 📋 按钮）→ 弹出 `EditPasswordSheet(account:)` 编辑
-- 卡片左滑 → 露出红色圆形删除按钮 → `.alert` 二次确认 → 同时删 Keychain + SwiftData 行
+- 卡片左滑 → 露出红色圆形删除按钮 → `.alert` 二次确认 → `context.delete(p)`（明文随记录一起删除）
 
 **实现逻辑：**
 
@@ -147,7 +160,7 @@ Base32 密钥不在此存储。
    - `UIImpactFeedbackGenerator(style: .light).impactOccurred()`
    - 设置 `@State toast = "\(label)已复制"`；1.4s 后 `withAnimation` 清空
 4. toast UI 挂在整个 `ZStack.overlay(alignment: .bottom)`，切 tab 也能覆盖
-5. 删除 alert 确认按钮：`KeychainManager.delete(p.passwordKeychainKey)` → `context.delete(p)` → `save()`
+5. 删除 alert 确认按钮：`context.delete(p)` → `save()`（不再调用 Keychain）
 
 ### 2FA 列表 & 定时刷新
 
@@ -160,7 +173,7 @@ Base32 密钥不在此存储。
 - 每 1 秒 `Timer.publish` tick → 重新计算 TOTP 与 remaining 秒数
 - 右侧独立 📋 复制按钮（不再是点整行）→ 复制当前 code + toast "验证码已复制"
 - 点击卡片主体 → 弹出 `EditOTPSheet(account:)` 编辑 issuer / accountName
-- 卡片左滑 → 删除；同步 `KeychainManager.delete(secretKeychainKey)`
+- 卡片左滑 → 删除；明文随 `context.delete(o)` 一起删除
 
 **实现逻辑：**
 
@@ -169,8 +182,8 @@ Base32 密钥不在此存储。
 3. `@State private var code = "------"`；`@State var remaining = 30`
 4. `.onAppear { refresh() }` + `.onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in refresh() }`
 5. `refresh()`：
-   - `guard let secret = KeychainManager.load(secretKeychainKey) else { return }`
-   - `OTPGenerator.totp(secretBase32: secret, period: account.period, digits: account.digits)`
+   - `guard !account.secretPlain.isEmpty else { code = "------"; return }`
+   - `OTPGenerator.totp(secretBase32: account.secretPlain, period: account.period, digits: account.digits)`
    - `OTPGenerator.remainingSeconds(period:)`
 6. 复制按钮：`Button { onCopy(code, "验证码") } label: { Image("doc.on.doc") }`
 
@@ -201,10 +214,10 @@ Base32 密钥不在此存储。
 
 **业务规则：**
 
-- `account == nil` → 新增；非 `nil` → 编辑（`init` 从 Keychain 预填明文密码，从 `PasswordAccount` 预填其它字段）
+- `account == nil` → 新增；非 `nil` → 编辑（`init` 从 `account.passwordPlain` 预填明文密码，从 `PasswordAccount` 预填其它字段）
 - 平台名空 → "未命名"
-- 新增时生成 `key = "pwd." + UUID().uuidString`；编辑时复用原 key
-- Keychain 与 SwiftData 是**两次写入，无事务保证**；MVP 接受"极端场景下 keychain 已写、SQLite 未写"的孤儿密钥（占用极小）
+- 编辑时直接回写 `account.passwordPlain`；新增时构造 `PasswordAccount(passwordPlain: password)`
+- 一次 `context.save()` 落盘，无 Keychain 调用
 - 密码行支持明文查看（`@State revealPassword`，`SecureField` ↔ `TextField` 切换）；明文态关掉自动大小写化 + 自动纠正
 - 账号 / 密码非空时右侧显示 `xmark.circle.fill` 一键清空（长串账号 / 密码高频需求）
 - 平台名不加清空按钮（短品牌名，加了拥挤）
@@ -214,8 +227,8 @@ Base32 密钥不在此存储。
 1. FAB → `showCreatePwd = true`；或点卡片 → `editingPwd = p`
 2. Form：platform / account（清空） / password（`SecureField` ↔ `TextField` + 清空 + 显隐） / category
 3. `save()`：
-   - 编辑：`KeychainManager.save(password, for: p.passwordKeychainKey)` → 回写字段 → 刷新 `updatedAt`
-   - 新增：`KeychainManager.save(password, for: newKey)` → `context.insert(PasswordAccount(...))`
+   - 编辑：回写 `p.passwordPlain = password` 等字段 → 刷新 `updatedAt`
+   - 新增：`context.insert(PasswordAccount(platform:, account:, typeText:, category:, passwordPlain: password))`
 4. `try? context.save()` → `dismiss()`
 
 ### 新增 2FA（扫码）
@@ -242,9 +255,7 @@ Base32 密钥不在此存储。
    - `session.startRunning()` 放到 `DispatchQueue.global(qos: .userInitiated)` 后台队列
    - 命中一次后 `didFire = true` 防抖
 3. `OTPAuthURL.parse(scannedString)` → 解析成功：
-   - `key = "otp." + UUID().uuidString`
-   - `KeychainManager.save(parsed.secretBase32, for: key)`
-   - `context.insert(OTPAccount(issuer:, accountName:, secretKeychainKey: key, period:, digits:))`
+   - `context.insert(OTPAccount(issuer:, accountName:, secretPlain: parsed.secretBase32, period:, digits:))`
    - `UINotificationFeedbackGenerator(.success)` + `dismiss()`
 4. 解析失败 → `showError("链接不是有效的 otpauth 二维码")` 2s 后自动消失
 
@@ -256,8 +267,8 @@ Base32 密钥不在此存储。
 
 - 参数为**非可选** `OTPAccount`，从签名上禁止新增走这里
 - 只允许改 `issuer` / `accountName`；Base32 密钥输入框、`period` / `digits` 相关字段**全部隐藏**
-- 保存时不触碰 Keychain，避免误改导致验证码永久失效
-- 底部说明："密钥通过扫码添加后不可修改，仅存于 iOS Keychain。如需替换密钥，请删除后重新扫码添加。"
+- 保存时不触碰 `secretPlain`，避免误改导致验证码永久失效
+- 底部说明："密钥通过扫码添加后不可修改，仅存于本机 SwiftData。如需替换密钥，请删除后重新扫码添加。"
 
 **实现逻辑：**
 
@@ -272,7 +283,7 @@ Base32 密钥不在此存储。
 **业务规则：**
 
 - 左滑 → 露出圆形红色删除按钮；点击 → 二次 `.alert` 确认
-- **敏感数据兜底**：必须先 `KeychainManager.delete(keychainKey)` 清明文，再 `context.delete(...)`
+- 确认后直接 `context.delete(p)` / `context.delete(o)`；明文随 SwiftData 记录一起删除，不再单独清理 Keychain
 - 确认或取消后收起左滑态（`openSwipeId = nil`）
 
 **实现逻辑：**
@@ -280,7 +291,7 @@ Base32 密钥不在此存储。
 1. `SwipeToDeleteRow.onDelete = { pendingDeletePwd = p }` / `{ pendingDeleteOTP = o }`
 2. `.alert("删除该密码？", isPresented: Binding(...))`：
    - 取消 → `pendingDelete? = nil`
-   - 删除 → `KeychainManager.delete(...)` → `context.delete(...)` → `save()` → `openSwipeId = nil`
+   - 删除 → `context.delete(...)` → `save()` → `openSwipeId = nil`
 
 ## 5. 参考资料
 

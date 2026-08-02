@@ -25,7 +25,9 @@ final class PasswordAccount {
     var account: String
     var typeText: String      // 展示辅文（例："社交 · 常用"）
     var categoryRaw: String
-    /// Keychain 中的 key，用于取得密码明文
+    /// 密码明文。App 不连外网（仅局域网同步），明文直接落 SwiftData，不再走 Keychain。
+    var passwordPlain: String
+    /// 历史 Keychain key，已废弃保留兼容；新数据写空串即可。
     var passwordKeychainKey: String
     var updatedAt: Date
     /// 是否为首次安装时灌入的 Demo 数据；用户自添的为 false。
@@ -33,13 +35,14 @@ final class PasswordAccount {
 
     init(id: UUID = UUID(), platform: String, account: String,
          typeText: String = "", category: PasswordCategory = .social,
-         passwordKeychainKey: String, updatedAt: Date = .init(),
-         isDemo: Bool = false) {
+         passwordPlain: String = "", passwordKeychainKey: String = "",
+         updatedAt: Date = .init(), isDemo: Bool = false) {
         self.id = id
         self.platform = platform
         self.account = account
         self.typeText = typeText
         self.categoryRaw = category.rawValue
+        self.passwordPlain = passwordPlain
         self.passwordKeychainKey = passwordKeychainKey
         self.updatedAt = updatedAt
         self.isDemo = isDemo

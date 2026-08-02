@@ -37,7 +37,7 @@ personal-butler/
 │   ├── AppEnvironment.swift      ← 全局状态：dataChanged / isUnlocked / lastSyncTime
 │   ├── AppRouter.swift           ← NavigationStack.path 承载子页面 id
 │   ├── AppTab.swift              ← 底部 Tab 枚举
-│   ├── AppSyncConfig.swift       ← 同步配置 UserDefaults 读写 + 稳定 deviceID
+│   ├── AppSyncConfig.swift       ← 同步配置 UserDefaults 读写（host + token，v6 起无 deviceID）
 │   └── AppColorTheme.swift       ← 全局主色板；改主题只碰这里
 ├── Core/                         ← 无业务耦合的通用底座
 │   ├── Auth/LocalAuthService.swift
@@ -107,14 +107,21 @@ LAN HTTP (仅用户手动触发)  ←── BackupSyncUseCase.upload / download
 3. `LocalBackupSheet.doExport()` 导出 JSON 文件
 4. `LanSyncView.doUpload()` / `doDownload()` 上传下载
 
-**Keychain 用法**：
+**敏感明文存储（v5 起改为 SwiftData）**：
 
-- Key 规范：`pwd.<uuid>` / `otp.<uuid>`
-- 写：先 `SecItemDelete` 再 `SecItemAdd`（`KeychainManager.save` 已封装）
-- accessibility：`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`（不改）
-- **禁止**把明文写进 `@Model` 属性 / 打日志 / 塞进 UserDefaults
+- 密码明文 / TOTP 密钥直接落 SwiftData 字段：`PasswordAccount.passwordPlain` / `OTPAccount.secretPlain`
+- 不再走 Keychain；`PasswordAccount.passwordKeychainKey` / `OTPAccount.secretKeychainKey` 仅作为历史字段保留，新数据写空串即可
+- `KeychainManager` 仍保留：
+  - `PersonalButlerApp.migrateKeychainToSwiftData` 在冷启时把老用户 Keychain 里的明文回填到 SwiftData（幂等，迁移成功后清理 Keychain 旧条目）
+  - 未来若启用 AutoFill / 系统密码自动填充，可能再次用 Keychain，目前不涉及
+- accessibility（若再用）：`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`（不改）
+- **禁止**：把明文打日志 / 塞进 UserDefaults / 任何外网请求
 
-**同步 JSON 明文字段**：`SyncPasswordDTO.passwordPlain` / `SyncOTPDTO.secretPlain` 只允许在内存组装 → 局域网传输的路径上出现；落磁盘只发生在**用户主动导出的 JSON 备份文件**中（且该文件本身没有加密，属已知取舍）。
+**同步 JSON 明文字段**：`SyncPasswordDTO.passwordPlain` / `SyncOTPDTO.secretPlain` 现在直接来自 SwiftData 模型字段；落磁盘发生在：
+1. 服务端 MySQL（局域网内自建，明文入库，schema 见 `server/sql/init.sql`）
+2. 用户主动导出的 JSON 备份文件（无加密，属已知取舍）
+
+**服务端 GORM 注意事项**：`tx.CreateInBatches(rows, N)` 默认跳过零值字段，会让空串明文段落入 NULL，下载回客户端丢失明文。`server/internal/service/sync.go` 的所有 `CreateInBatches` 已统一加 `Select("*")` 强制写入所有字段；新增表/批量插入时也必须带 `Select("*")`。
 
 ---
 
@@ -176,11 +183,11 @@ LAN HTTP (仅用户手动触发)  ←── BackupSyncUseCase.upload / download
 服务端由用户自建。客户端与服务端遵守以下契约：
 
 - 地址：`http://<host>:8090`
-- 头：`Content-Type: application/json` / `X-Device-ID` / `X-Sync-Token`
+- 头：`Content-Type: application/json` / `X-Sync-Token`（v6 起单用户单设备，移除 `X-Device-ID`）
 - 顶层 JSON：`{ syncMeta: {...}, data: {...} }`；见 `Data/Mapper/SyncPayload.swift`
 - 4 个端点：`POST /sync/upload` / `GET /sync/download` / `GET /sync/info` / `DELETE /sync/clear`
 - 统一返回结构：`{ code: Int, msg: String, data: T? }`
-- 错误码：0 成功 / 1001 头缺失 / 1002 密钥错 / 1003 JSON 解析失败 / 2001 存储失败 / 2002 无备份 / 2003 同一设备写请求并发中（服务端 TryLock 拒绝） / 5000 内部异常
+- 错误码：0 成功 / 1001 头缺失 / 1002 密钥错 / 1003 JSON 解析失败 / 2001 存储失败 / 2002 无备份 / 2003 写请求并发中（服务端全局 TryLock 拒绝） / 5000 内部异常
 
 **破坏性变更规则**：
 
