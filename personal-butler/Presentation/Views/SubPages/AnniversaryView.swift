@@ -29,7 +29,7 @@ struct AnniversaryView: View {
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
 
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    VStack(spacing: 0) {
                         ForEach(filtered, id: \.id) { a in
                             anniRow(a)
                             Divider().padding(.horizontal, 16)
@@ -38,6 +38,9 @@ struct AnniversaryView: View {
                         Spacer(minLength: 120)
                     }
                 }
+                // 显式声明填充剩余空间：VStack 顶部有 hero + SegmentedPill 时，
+                // 确保 ScrollView 拿到导航栏以下的所有剩余高度，否则可能因布局歧义拿到 0 高度
+                .frame(maxHeight: .infinity)
                 // 点击列表空白区收起已展开的滑动行
                 .simultaneousGesture(
                     TapGesture().onEnded {
